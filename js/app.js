@@ -5,7 +5,7 @@ import { DEMO_CSV } from './demo.js';
 const $ = (s) => document.querySelector(s);
 const SETTINGS_KEY = 'carapp.settings.v1';
 const CACHE_KEY = 'carapp.cache.v1';
-const DEFAULTS = { sheet: '', sheetName: '', interval: 5, carName: 'インサイト', bodyColor: '#080c0b', plateRegion: '岐阜 303', plateKana: '', plateNumber: '55-10' };
+const DEFAULTS = { sheet: '', sheetName: '', interval: 5, carName: 'インサイト', bodyColor: '#080c0b', plateRegion: '岐阜 303', plateKana: 'の', plateNumber: '55-10' };
 
 // ---------- storage (wrapped: private mode can throw) ----------
 const store = {
