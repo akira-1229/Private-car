@@ -20,7 +20,7 @@
   <div id="app">
     <header class="topbar">
       <div class="title">
-        <h1 id="carName">マイカー</h1>
+        <h1 id="carName">インサイト</h1>
         <p id="syncStatus" class="sub">読み込み中…</p>
       </div>
       <div class="actions">
@@ -79,10 +79,21 @@
       </label>
       <div class="row2">
         <label>車の名前
-          <input type="text" name="carName" placeholder="マイカー">
+          <input type="text" name="carName" placeholder="インサイト">
         </label>
         <label>ボディカラー
           <input type="color" name="bodyColor">
+        </label>
+      </div>
+      <div class="row3">
+        <label>ナンバー（地名・分類番号）
+          <input type="text" name="plateRegion" placeholder="岐阜 303">
+        </label>
+        <label>ひらがな
+          <input type="text" name="plateKana" placeholder="—" maxlength="1">
+        </label>
+        <label>番号
+          <input type="text" name="plateNumber" placeholder="55-10">
         </label>
       </div>
       <div class="dialog-actions">

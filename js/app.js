@@ -5,7 +5,7 @@ import { DEMO_CSV } from './demo.js';
 const $ = (s) => document.querySelector(s);
 const SETTINGS_KEY = 'carapp.settings.v1';
 const CACHE_KEY = 'carapp.cache.v1';
-const DEFAULTS = { sheet: '', sheetName: '', interval: 5, carName: 'マイカー', bodyColor: '#c8102e' };
+const DEFAULTS = { sheet: '', sheetName: '', interval: 5, carName: 'インサイト', bodyColor: '#080c0b', plateRegion: '岐阜 303', plateKana: '', plateNumber: '55-10' };
 
 // ---------- storage (wrapped: private mode can throw) ----------
 const store = {
@@ -29,6 +29,9 @@ function loadSettings() {
 }
 
 let settings = loadSettings();
+function plateOf(st) {
+  return { region: st.plateRegion, kana: st.plateKana, number: st.plateNumber };
+}
 let data = null; // interpret() result
 let currentView = null; // { type: 'part'|'general'|'attention', id }
 let timer = null;
@@ -37,6 +40,7 @@ let loading = false;
 
 const viewer = new CarViewer($('#viewer'), {
   bodyColor: settings.bodyColor,
+  plate: plateOf(settings),
   onSelect: (id) => (id ? openPart(id) : closePanel()),
 });
 viewer.onInteract = () => $('#hint').classList.add('hide');
@@ -230,6 +234,7 @@ dlg.addEventListener('close', () => {
   store.set(SETTINGS_KEY, settings);
   $('#carName').textContent = settings.carName || DEFAULTS.carName;
   viewer.setBodyColor(settings.bodyColor);
+  viewer.setPlate(plateOf(settings));
   data = null;
   $('#errorBanner').hidden = true;
   schedule();

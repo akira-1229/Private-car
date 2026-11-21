@@ -31,7 +31,7 @@ html, body {
 #app {
   position: fixed;
   inset: 0;
-  background: radial-gradient(120% 80% at 50% 35%, var(--bg-2) 0%, var(--bg-1) 70%);
+  background: radial-gradient(130% 85% at 50% 42%, #3a4a66 0%, #1b2538 45%, var(--bg-1) 80%);
 }
 
 button { font: inherit; color: inherit; }
@@ -215,6 +215,7 @@ dialog input, dialog select {
 dialog input[type="color"] { height: 44px; padding: 4px; }
 dialog small { display: block; margin-top: 5px; font-size: 11px; line-height: 1.5; }
 .row2 { display: grid; grid-template-columns: 1fr 110px; gap: 10px; }
+.row3 { display: grid; grid-template-columns: 1fr 64px 92px; gap: 8px; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
 .btn { min-height: 44px; padding: 0 16px; border-radius: 12px; border: 1px solid var(--line); background: var(--card-2); cursor: pointer; font-weight: 600; }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
