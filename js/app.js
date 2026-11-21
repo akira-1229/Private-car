@@ -5,7 +5,7 @@ import { DEMO_CSV } from './demo.js';
 const $ = (s) => document.querySelector(s);
 const SETTINGS_KEY = 'carapp.settings.v1';
 const CACHE_KEY = 'carapp.cache.v1';
-const DEFAULTS = { sheet: '', sheetName: '', interval: 5, carName: 'インサイト', bodyColor: '#080c0b', plateRegion: '岐阜 303', plateKana: 'の', plateNumber: '55-10' };
+const DEFAULTS = { sheet: '', sheetName: '', interval: 5, carName: 'インサイト', bodyColor: '#080c0b', plateRegion: '岐阜 303', plateKana: 'の', plateNumber: '55-10', modelUrl: '', modelFlip: false };
 
 // ---------- storage (wrapped: private mode can throw) ----------
 const store = {
@@ -46,6 +46,56 @@ const viewer = new CarViewer($('#viewer'), {
 viewer.onInteract = () => $('#hint').classList.add('hide');
 
 $('#carName').textContent = settings.carName || DEFAULTS.carName;
+
+// ---------- scanned 3D model (kept in IndexedDB on this device) ----------
+const idb = {
+  open() {
+    return new Promise((res, rej) => {
+      const r = indexedDB.open('carapp', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('files');
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => rej(r.error);
+    });
+  },
+  async run(mode, fn) {
+    const db = await this.open();
+    return new Promise((res, rej) => {
+      const tx = db.transaction('files', mode);
+      const req = fn(tx.objectStore('files'));
+      tx.oncomplete = () => res(req?.result);
+      tx.onerror = () => rej(tx.error);
+    });
+  },
+  get: (k) => idb.run('readonly', (s) => s.get(k)).catch(() => null),
+  set: (k, v) => idb.run('readwrite', (s) => s.put(v, k)),
+  del: (k) => idb.run('readwrite', (s) => s.delete(k)).catch(() => {}),
+};
+
+let modelLabel = '';
+async function loadModel() {
+  let src = null;
+  const saved = await idb.get('model');
+  if (saved?.blob) { src = await saved.blob.arrayBuffer(); modelLabel = `${saved.name}（${mb(saved.blob.size)}・この端末に保存）`; }
+  else if (settings.modelUrl) { src = settings.modelUrl; modelLabel = settings.modelUrl; }
+  else {
+    try {
+      const r = await fetch('models/car.glb', { method: 'HEAD', cache: 'no-store' });
+      if (r.ok) { src = 'models/car.glb'; modelLabel = 'models/car.glb（リポジトリ内）'; }
+    } catch { /* none */ }
+  }
+  if (!src) { viewer.clearModel(); modelLabel = ''; return; }
+  $('#hint').textContent = '3Dモデルを読み込み中…';
+  try {
+    await viewer.loadModel(src, { flip: !!settings.modelFlip });
+  } catch (e) {
+    viewer.clearModel();
+    showError(`3Dモデルを読み込めませんでした（${e.message || e}）。.glb 形式か確認してください。`);
+    modelLabel = '';
+  } finally {
+    $('#hint').textContent = 'ドラッグで回転 ・ ピンチで拡大 ・ 部位をタップ';
+  }
+}
+const mb = (n) => `${(n / 1048576).toFixed(1)}MB`;
 
 // ---------- data ----------
 function apply(table, source) {
@@ -221,7 +271,13 @@ $('#btnClosePanel').addEventListener('click', closePanel);
 const dlg = $('#settings');
 const form = $('#settingsForm');
 function openSettings() {
-  for (const [k, v] of Object.entries(settings)) if (form.elements[k]) form.elements[k].value = v;
+  for (const [k, v] of Object.entries(settings)) {
+    const el = form.elements[k];
+    if (!el || el.type === 'file') continue;
+    if (el.type === 'checkbox') el.checked = !!v; else el.value = v;
+  }
+  form.elements.modelFile.value = '';
+  $('#modelInfo').textContent = modelLabel ? `表示中: ${modelLabel}` : '未設定（標準モデルを表示中）';
   dlg.showModal();
 }
 $('#btnSettings').addEventListener('click', openSettings);
@@ -229,16 +285,36 @@ $('#btnOpenSettings2').addEventListener('click', openSettings);
 dlg.addEventListener('close', () => {
   if (dlg.returnValue !== 'save') return;
   const fd = new FormData(form);
+  const file = form.elements.modelFile.files[0];
+  fd.delete('modelFile');
+  const prevModel = `${settings.modelUrl}|${settings.modelFlip}`;
   settings = { ...settings, ...Object.fromEntries(fd.entries()) };
+  settings.modelFlip = form.elements.modelFlip.checked;
   settings.interval = +settings.interval || 5;
   store.set(SETTINGS_KEY, settings);
   $('#carName').textContent = settings.carName || DEFAULTS.carName;
   viewer.setBodyColor(settings.bodyColor);
   viewer.setPlate(plateOf(settings));
+  if (file) idb.set('model', { name: file.name, blob: file }).then(loadModel).catch((e) => showError(`保存できませんでした: ${e.message || e}`));
+  else if (prevModel !== `${settings.modelUrl}|${settings.modelFlip}`) loadModel();
   data = null;
   $('#errorBanner').hidden = true;
   schedule();
   refresh({ manual: true });
+});
+
+form.elements.modelFile.addEventListener('change', () => {
+  const f = form.elements.modelFile.files[0];
+  if (f) $('#modelInfo').textContent = `選択中: ${f.name}（${mb(f.size)}）→「保存して読み込み」で反映`;
+});
+$('#btnClearModel').addEventListener('click', async () => {
+  await idb.del('model');
+  settings.modelUrl = '';
+  form.elements.modelUrl.value = '';
+  store.set(SETTINGS_KEY, settings);
+  modelLabel = '';
+  viewer.clearModel();
+  $('#modelInfo').textContent = '未設定（標準モデルを表示中）';
 });
 
 $('#btnRefresh').addEventListener('click', () => refresh({ manual: true }));
@@ -246,6 +322,7 @@ $('#btnRefresh').addEventListener('click', () => refresh({ manual: true }));
 // ---------- start ----------
 refresh();
 schedule();
+loadModel();
 
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
   navigator.serviceWorker.register('sw.js').catch(() => {});

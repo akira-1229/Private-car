@@ -1,10 +1,11 @@
 // Network-first cache for the app shell so the app opens offline.
 // Spreadsheet requests (other origins) are never cached here; the app keeps its own copy.
-const CACHE = 'carapp-v1';
+const CACHE = 'carapp-v2';
 const SHELL = [
   './', 'index.html', 'style.css', 'manifest.webmanifest',
   'js/app.js', 'js/car.js', 'js/sheet.js', 'js/demo.js',
   'vendor/three.module.min.js', 'vendor/OrbitControls.js', 'vendor/RoomEnvironment.js',
+  'vendor/GLTFLoader.js', 'vendor/utils/BufferGeometryUtils.js',
   'icons/icon-180.png', 'icons/icon-192.png',
 ];
 self.addEventListener('install', (e) => {

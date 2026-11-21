@@ -1,7 +1,9 @@
-// 3D car model built from primitives (front of the car points to +X, right side is +Z).
+// 3D car viewer (front of the car points to +X, right side is +Z).
+// Shows a built-in model made from primitives, or a scanned model (.glb) of the real car.
 import * as THREE from 'three';
 import { OrbitControls } from '../vendor/OrbitControls.js';
 import { RoomEnvironment } from '../vendor/RoomEnvironment.js';
+import { GLTFLoader } from '../vendor/GLTFLoader.js';
 
 const LEVEL_COLORS = { bad: '#ff5a5f', warn: '#f5b83d', ok: '#34c77b' };
 
@@ -58,6 +60,10 @@ export class CarViewer {
     this.#buildCar(bodyColor);
     this.#buildShadow();
     this.setPlate(plate || {});
+    this.focus = new THREE.Sprite(new THREE.SpriteMaterial({ map: ringTexture(), depthTest: false, transparent: true }));
+    this.focus.renderOrder = 9;
+    this.focus.visible = false;
+    this.car.add(this.focus);
 
     this.raycaster = new THREE.Raycaster();
     this.#bindTap();
@@ -98,8 +104,8 @@ export class CarViewer {
       color: 0x16222a, metalness: 0.1, roughness: 0.08, side: THREE.DoubleSide, envMapIntensity: 0.8,
     });
     const tireMat = new THREE.MeshStandardMaterial({ color: 0x18181a, roughness: 0.9 });
-    const rimMat = new THREE.MeshStandardMaterial({ color: 0xc9ced4, metalness: 1, roughness: 0.22 });
-    const rimDarkMat = new THREE.MeshStandardMaterial({ color: 0x3a3e44, metalness: 0.8, roughness: 0.35 });
+    const rimMat = new THREE.MeshStandardMaterial({ color: 0xc4c9cf, metalness: 1, roughness: 0.25 });
+    const rimDarkMat = new THREE.MeshStandardMaterial({ color: 0x1e2125, metalness: 0.7, roughness: 0.4 });
     const chromeMat = new THREE.MeshStandardMaterial({ color: 0xe3e7ec, metalness: 1, roughness: 0.08 });
     const headMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xe8f0ff, emissiveIntensity: 0.9, roughness: 0.1 });
     const headHousingMat = new THREE.MeshStandardMaterial({ color: 0x1a1d22, metalness: 0.7, roughness: 0.15 });
@@ -154,6 +160,16 @@ export class CarViewer {
     wing.position.set(2.37, 0.6, 0);
     wing.rotation.z = 0.5;
     body.add(grille, wing);
+    const upper = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.12, 0.62), trimMat);
+    upper.position.set(2.35, 0.53, 0);
+    upper.rotation.z = 0.3;
+    body.add(upper);
+    for (let i = 0; i < 4; i++) {
+      const slat = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.012, 0.6 - i * 0.03), chromeMat);
+      slat.position.set(2.378 - i * 0.008, 0.565 - i * 0.03, 0);
+      slat.rotation.z = 0.3;
+      body.add(slat);
+    }
     for (const z of [-1, 1]) {
       const fog = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.1, 0.26), trimMat);
       fog.position.set(2.29, 0.38, z * 0.68);
@@ -361,33 +377,42 @@ export class CarViewer {
     return new THREE.Mesh(g, m);
   }
 
+  // 18-inch fine multi-spoke wheel (EX Black Style): dark base with machined spoke faces
   #wheel(tireMat, rimMat, rimDarkMat, side) {
     const g = new THREE.Group();
-    const tire = new THREE.Mesh(new THREE.TorusGeometry(0.25, 0.08, 18, 48), tireMat);
-    tire.scale.z = 1.4;
+    const tire = new THREE.Mesh(new THREE.TorusGeometry(0.262, 0.07, 20, 64), tireMat);
+    tire.scale.z = 1.6;
     g.add(tire);
-    const tread = new THREE.Mesh(new THREE.CylinderGeometry(0.33, 0.33, 0.19, 48, 1, true), tireMat);
+    const tread = new THREE.Mesh(new THREE.CylinderGeometry(0.332, 0.332, 0.2, 64, 1, true), tireMat);
     tread.rotation.x = Math.PI / 2;
     g.add(tread);
-    // dark rim barrel
-    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.215, 0.215, 0.2, 40), rimDarkMat);
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.228, 0.228, 0.21, 48), rimDarkMat);
     barrel.rotation.x = Math.PI / 2;
     g.add(barrel);
-    // bright lip
-    const lip = new THREE.Mesh(new THREE.TorusGeometry(0.212, 0.012, 8, 48), rimMat);
-    lip.position.z = side * 0.1;
+    const lip = new THREE.Mesh(new THREE.TorusGeometry(0.226, 0.01, 8, 64), rimMat);
+    lip.position.z = side * 0.105;
     g.add(lip);
-    const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.03, 16), rimMat);
+    const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.055, 0.035, 24), rimDarkMat);
     hub.rotation.x = Math.PI / 2;
     hub.position.z = side * 0.115;
     g.add(hub);
-    // 5 twisted split spokes (10 blades)
-    for (let i = 0; i < 5; i++) {
-      for (const off of [-0.11, 0.11]) {
-        const a = (i / 5) * Math.PI * 2 + off;
-        const sp = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.17, 0.022), rimMat);
-        sp.position.set(Math.cos(a) * 0.125, Math.sin(a) * 0.125, side * 0.106);
-        sp.rotation.z = a - Math.PI / 2 + off * 0.8;
+    const cap = new THREE.Mesh(new THREE.CircleGeometry(0.03, 24), rimMat);
+    cap.position.z = side * 0.134;
+    if (side < 0) cap.rotation.y = Math.PI;
+    g.add(cap);
+    // 10 Y-shaped spokes = 20 thin blades that split towards the rim
+    const blade = new THREE.BoxGeometry(0.016, 0.175, 0.02);
+    for (let i = 0; i < 10; i++) {
+      const base = (i / 10) * Math.PI * 2;
+      const stem = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.07, 0.022), rimMat);
+      stem.position.set(Math.cos(base) * 0.085, Math.sin(base) * 0.085, side * 0.108);
+      stem.rotation.z = base - Math.PI / 2;
+      g.add(stem);
+      for (const off of [-0.09, 0.09]) {
+        const a = base + off;
+        const sp = new THREE.Mesh(blade, i % 2 ? rimMat : rimMat);
+        sp.position.set(Math.cos(a) * 0.15, Math.sin(a) * 0.15, side * 0.104);
+        sp.rotation.z = a - Math.PI / 2 + off * 1.4;
         g.add(sp);
       }
     }
@@ -461,8 +486,17 @@ export class CarViewer {
     // markers first (they are drawn on top)
     const markers = [...this.parts.values()].map((p) => p.marker).filter((m) => m && m.visible);
     let hit = this.raycaster.intersectObjects(markers, false)[0];
-    if (!hit) hit = this.raycaster.intersectObjects(this.car.children, true).find((h) => h.object.isMesh);
-    const id = hit?.object.userData.partId || null;
+    let id = hit?.object.userData.partId || null;
+    if (!hit && this.scan) {
+      hit = this.raycaster.intersectObject(this.scan, true).find((h) => h.object.isMesh);
+      if (hit) {
+        const n = hit.face ? hit.face.normal.clone().transformDirection(hit.object.matrixWorld) : new THREE.Vector3(0, 1, 0);
+        id = this.#classify(hit.point, n);
+      }
+    } else if (!hit) {
+      hit = this.raycaster.intersectObjects(this.car.children, true).find((h) => h.object.isMesh && h.object.visible);
+      id = hit?.object.userData.partId || null;
+    }
     this.select(id);
     this.onSelect(id);
   }
@@ -470,6 +504,10 @@ export class CarViewer {
   select(id) {
     this.selected = id;
     if (id) this.controls.autoRotate = false;
+    // a scanned model is one big mesh, so show a glow at the part instead of tinting it
+    const anchor = id && this.parts.get(id)?.marker;
+    this.focus.visible = !!(this.scan && anchor);
+    if (this.focus.visible) this.focus.position.copy(anchor.position);
     for (const [pid, p] of this.parts) {
       const on = pid === id;
       for (const m of p.meshes) {
@@ -483,6 +521,87 @@ export class CarViewer {
         }
       }
     }
+  }
+
+  // ---------- scanned model ----------
+  async loadModel(source, { flip = false } = {}) {
+    const loader = new GLTFLoader();
+    const gltf = typeof source === 'string'
+      ? await loader.loadAsync(source)
+      : await new Promise((res, rej) => loader.parse(source, '', res, rej));
+    this.clearModel();
+    const obj = gltf.scene;
+    obj.traverse((o) => {
+      if (o.isMesh) {
+        o.frustumCulled = false;
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        for (const m of mats) if (m.map) m.map.anisotropy = 8;
+      }
+    });
+    // lay the longest horizontal axis along X, then normalise to the real length
+    const inner = new THREE.Group();
+    inner.add(obj);
+    let size = new THREE.Box3().setFromObject(inner).getSize(new THREE.Vector3());
+    if (size.z > size.x) obj.rotation.y = Math.PI / 2;
+    if (flip) obj.rotation.y += Math.PI;
+    const wrap = new THREE.Group();
+    wrap.add(inner);
+    wrap.updateMatrixWorld(true);
+    size = new THREE.Box3().setFromObject(wrap).getSize(new THREE.Vector3());
+    wrap.scale.setScalar(REF.L / size.x);
+    wrap.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(wrap);
+    const c = box.getCenter(new THREE.Vector3());
+    wrap.position.set(-c.x, -box.min.y, -c.z);
+    wrap.updateMatrixWorld(true);
+    const dims = new THREE.Box3().setFromObject(wrap).getSize(new THREE.Vector3());
+    this.scanScale = new THREE.Vector3(dims.x / REF.L, dims.y / REF.H, dims.z / REF.W);
+    this.scan = wrap;
+    this.scene.add(wrap);
+    for (const o of this.car.children) if (!o.isSprite) o.visible = false;
+    for (const p of this.parts.values()) {
+      if (p.marker && p.anchor) p.marker.position.copy(p.anchor).multiply(this.scanScale);
+    }
+    this.select(this.selected);
+    return dims;
+  }
+
+  clearModel() {
+    if (!this.scan) return;
+    this.scene.remove(this.scan);
+    this.scan.traverse((o) => {
+      if (!o.isMesh) return;
+      o.geometry.dispose();
+      for (const m of [].concat(o.material)) { m.map?.dispose(); m.dispose(); }
+    });
+    this.scan = null;
+    for (const o of this.car.children) if (!o.isSprite) o.visible = true;
+    for (const p of this.parts.values()) if (p.marker && p.anchor) p.marker.position.copy(p.anchor);
+    this.focus.visible = false;
+  }
+
+  // Which part was tapped on the scanned model, judged from where it was hit.
+  #classify(point, normal) {
+    const k = this.scanScale;
+    const x = point.x / k.x, y = point.y / k.y, z = point.z / k.z;
+    const az = Math.abs(z), right = z > 0;
+    for (const [wx, front] of [[REF.WHEEL_X, true], [-REF.WHEEL_X, false]]) {
+      if (Math.hypot(x - wx, y - REF.WHEEL_R) < 0.37 && az > 0.45) {
+        return `tire_${front ? 'f' : 'r'}${right ? 'r' : 'l'}`;
+      }
+    }
+    if (x > 2.05 && y > 0.55 && y < 0.84 && az > 0.3) return 'headlight';
+    if (x < -2.12 && y > 0.76 && y < 1.04 && az > 0.22) return 'taillight';
+    if (x > 0.3 && x < 0.8 && y > 0.94 && y < 1.2 && az > 0.8) return 'mirror';
+    if (y > 0.97) {
+      if (x > 0.58 && x < 0.9 && y < 1.07 && az < 0.75) return 'wiper';
+      if (az > 0.56 && y < 1.37 && x > -1.8 && x < 0.65) return 'side_window';
+      if (x > -0.18 && x < 0.8 && az < 0.66) return 'windshield';
+      if (x < -0.95 && x > -1.95 && az < 0.6) return 'rear_window';
+      return 'interior';
+    }
+    if (x > 0.7 && y > 0.68 && az < 0.78 && normal.y > 0.45) return 'engine';
+    return 'body';
   }
 
   setLevels(levels) {
@@ -562,6 +681,7 @@ export class CarViewer {
         p.marker.scale.setScalar(0.17 + Math.sin(t * k) * 0.035);
       }
     }
+    if (this.focus.visible) this.focus.scale.setScalar(0.55 + Math.sin(t * 4) * 0.08);
     const tgt = this._insetTarget || 0;
     this._inset = (this._inset || 0) + (tgt - (this._inset || 0)) * 0.15;
     if (Math.abs(this._inset - tgt) < 0.5) this._inset = tgt;
@@ -583,6 +703,25 @@ function taperZ(geo, fn) {
   const p = geo.attributes.position;
   for (let i = 0; i < p.count; i++) p.setZ(i, p.getZ(i) * fn(p.getX(i), p.getY(i)));
   geo.computeVertexNormals();
+}
+
+// reference dimensions of the car in metres (Insight ZE4)
+const REF = { L: 4.675, H: 1.41, W: 1.82, WHEEL_X: 1.35, WHEEL_R: 0.33 };
+
+function ringTexture() {
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = 128;
+  const ctx = cv.getContext('2d');
+  const g = ctx.createRadialGradient(64, 64, 20, 64, 64, 64);
+  g.addColorStop(0, 'rgba(61,123,255,0)');
+  g.addColorStop(0.55, 'rgba(61,123,255,0.25)');
+  g.addColorStop(0.75, 'rgba(120,170,255,0.9)');
+  g.addColorStop(1, 'rgba(61,123,255,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 128, 128);
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
 }
 
 const texCache = new Map();

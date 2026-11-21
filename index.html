@@ -96,6 +96,18 @@
           <input type="text" name="plateNumber" placeholder="55-10">
         </label>
       </div>
+      <fieldset class="model-box">
+        <legend>実車の3Dモデル（スキャン）</legend>
+        <p id="modelInfo" class="model-info">未設定（標準モデルを表示中）</p>
+        <label class="file-btn">.glb ファイルを選ぶ
+          <input type="file" name="modelFile" accept=".glb,model/gltf-binary,application/octet-stream">
+        </label>
+        <label class="check"><input type="checkbox" name="modelFlip"> 前後を反転する（車が後ろ向きに表示されるとき）</label>
+        <label>またはモデルの URL（任意）
+          <input type="url" name="modelUrl" placeholder="https://…/car.glb" autocomplete="off">
+        </label>
+        <button type="button" class="btn ghost small" id="btnClearModel">スキャンモデルを外して標準モデルに戻す</button>
+      </fieldset>
       <div class="dialog-actions">
         <button value="cancel" class="btn ghost">キャンセル</button>
         <button value="save" class="btn primary" id="btnSave">保存して読み込み</button>
