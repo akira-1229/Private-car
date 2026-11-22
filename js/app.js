@@ -182,6 +182,9 @@ function schedule() {
   clearInterval(timer);
   timer = setInterval(() => { if (document.visibilityState === 'visible') refresh(); }, Math.max(1, +settings.interval) * 60000);
 }
+// leaving the app closes every door / hood / trunk, so it always comes back with the car shut
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') viewer.closeAllPanels(); });
+window.addEventListener('pageshow', () => viewer.closeAllPanels());
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && (!lastSync || Date.now() - lastSync > 60000)) refresh();
 });

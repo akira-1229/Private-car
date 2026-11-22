@@ -61,10 +61,15 @@ export class CarViewer {
     this.#buildCar(bodyColor);
     this.#buildShadow();
     this.setPlate(plate || {});
-    this.focus = new THREE.Sprite(new THREE.SpriteMaterial({ map: ringTexture(), depthTest: false, transparent: true }));
-    this.focus.renderOrder = 9;
-    this.focus.visible = false;
-    this.car.add(this.focus);
+    // glowing copy of the selected part, drawn over a scanned model
+    this.hlGroup = new THREE.Group();
+    this.scene.add(this.hlGroup);
+    this.hlMat = new THREE.MeshBasicMaterial({
+      color: 0x5b95ff, transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending,
+      // drawn over the splats (which sit slightly outside the built-in shape); back faces are culled
+      // so the far side of the car does not glow through
+      depthWrite: false, depthTest: false, side: THREE.FrontSide,
+    });
 
     this.raycaster = new THREE.Raycaster();
     this.#bindTap();
@@ -125,10 +130,13 @@ export class CarViewer {
     const g = buildBody();
     const body = new THREE.Group();
     body.add(new THREE.Mesh(g.paint, this.bodyMat));
-    body.add(new THREE.Mesh(g.under, darkMat));
+    const underMesh = new THREE.Mesh(g.under, darkMat);
+    underMesh.userData.noGlow = true;
+    body.add(underMesh);
     // underbody filler between the wheels
     const floor = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.12, 1.3), darkMat);
     floor.position.set(-0.05, 0.27, 0);
+    floor.userData.noGlow = true;
     body.add(floor);
     // gloss-black side sills
     for (const sd of [-1, 1]) {
@@ -232,7 +240,16 @@ export class CarViewer {
       w.rotation.set(0, 0.2, -0.6);
       wipers.add(w);
     }
-    this.#part('wiper', wipers, [0.78, 1.04, 0.35]);
+    this.#part('windshield', wipers); // wipers belong to the windshield
+
+    // ---- dash cam behind the windshield, next to the rear-view mirror (invisible hit area) ----
+    const camHit = new THREE.Mesh(
+      new THREE.BoxGeometry(0.24, 0.07, 0.32),
+      new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }),
+    );
+    camHit.position.set(0.29, 1.285, 0);
+    camHit.rotation.z = -0.57; // follow the windshield rake
+    this.#part('dashcam', camHit, [0.3, 1.36, 0]);
 
     // ---- lights: slim LED headlights wrapping the nose, L-shaped tail lights ----
     const heads = new THREE.Group();
@@ -455,7 +472,7 @@ export class CarViewer {
   #toggleAt(cx, cy) {
     this.#rayFrom(cx, cy);
     const hit = this.raycaster.intersectObjects(this.car.children, true)
-      .find((h) => h.object.isMesh && h.object !== this.focus && !h.object.isSprite);
+      .find((h) => h.object.isMesh && !h.object.isSprite);
     const id = hit && CarViewer.panelAt(hit.point);
     if (!id || !this.panels.has(id)) return false;
     this.togglePanel(id);
@@ -480,7 +497,7 @@ export class CarViewer {
     let id = hit?.object.userData.partId || null;
     if (!hit && this.scanKind === 'splat') {
       // the splat scan is aligned to the built-in model, which stays as an invisible hit target
-      hit = this.raycaster.intersectObjects(this.car.children, true).find((h) => h.object.isMesh && h.object !== this.focus);
+      hit = this.raycaster.intersectObjects(this.car.children, true).find((h) => h.object.isMesh);
       id = hit?.object.userData.partId || null;
     } else if (!hit && this.scan) {
       hit = this.raycaster.intersectObject(this.scan, true).find((h) => h.object.isMesh);
@@ -499,22 +516,45 @@ export class CarViewer {
   select(id) {
     this.selected = id;
     if (id) this.controls.autoRotate = false;
-    // a scanned model is one big mesh, so show a glow at the part instead of tinting it
-    const anchor = id && this.parts.get(id)?.marker;
-    this.focus.visible = !!(this.scan && anchor);
-    if (this.focus.visible) this.focus.position.copy(anchor.position);
-    for (const [pid, p] of this.parts) {
-      const on = pid === id;
+    // reset the previous highlight
+    for (const p of this.parts.values()) {
       for (const m of p.meshes) {
         if (!m.material.emissive) continue;
-        if (on) {
-          m.material.emissive.set(0x3d7bff);
-          m.material.emissiveIntensity = 0.55;
-        } else {
-          m.material.emissive.copy(m.userData.baseEmissive);
-          m.material.emissiveIntensity = m.userData.baseEmissiveIntensity;
-        }
+        m.material.emissive.copy(m.userData.baseEmissive);
+        m.material.emissiveIntensity = m.userData.baseEmissiveIntensity;
       }
+    }
+    this.hlGroup.clear();
+    this.hlMeshes = [];
+    const part = id && this.parts.get(id);
+    if (!part) return;
+    // the scan is one cloud of points: glow the matching built-in part (same position) on top of it;
+    // on the built-in model, glow the part itself (and overlay parts that have no emissive colour)
+    const overlay = (this.scan ? part.meshes : part.meshes.filter((m) => !m.material.emissive)).filter((m) => !m.userData.noGlow);
+    if (overlay.length) {
+      this.car.updateMatrixWorld(true);
+      for (const m of overlay) {
+        const o = new THREE.Mesh(m.geometry, this.hlMat);
+        o.matrixAutoUpdate = false;
+        o.matrix.copy(m.matrixWorld);
+        // the scan is a little shorter than the built-in shape (same fit as the black core)
+        if (this.scanKind === 'splat') o.matrix.premultiply(new THREE.Matrix4().makeScale(0.975, 0.97, 0.97).setPosition(0.02, 0, 0));
+        o.renderOrder = 1000;
+        this.hlGroup.add(o);
+      }
+    }
+    if (!this.scan) {
+      this.hlMeshes = part.meshes.filter((m) => m.material.emissive);
+      for (const m of this.hlMeshes) m.material.emissive.set(0x3d7bff);
+    }
+  }
+
+  /** Closes every door / the hood / the trunk at once (used when the app comes back to the front). */
+  closeAllPanels() {
+    if (!this.panels) return;
+    for (const p of this.panels.values()) {
+      p.t = p.target = 0;
+      p.pivot.quaternion.identity();
     }
   }
 
@@ -659,7 +699,7 @@ export class CarViewer {
     this.panels = null;
     for (const o of this.car.children) if (!o.isSprite) o.visible = true;
     for (const p of this.parts.values()) if (p.marker && p.anchor) p.marker.position.copy(p.anchor);
-    this.focus.visible = false;
+    this.hlGroup.clear();
   }
 
   // Which part was tapped on the scanned model, judged from where it was hit.
@@ -676,7 +716,8 @@ export class CarViewer {
     if (x < -2.12 && y > 0.76 && y < 1.04 && az > 0.22) return 'taillight';
     if (x > 0.3 && x < 0.8 && y > 0.94 && y < 1.2 && az > 0.8) return 'mirror';
     if (y > 0.97) {
-      if (x > 0.58 && x < 0.9 && y < 1.07 && az < 0.75) return 'wiper';
+      if (x > 0.15 && x < 0.45 && y > 1.2 && az < 0.18) return 'dashcam';
+      if (x > 0.58 && x < 0.9 && y < 1.07 && az < 0.75) return 'windshield';
       if (az > 0.56 && y < 1.37 && x > -1.8 && x < 0.65) return 'side_window';
       if (x > -0.18 && x < 0.8 && az < 0.66) return 'windshield';
       if (x < -0.95 && x > -1.95 && az < 0.6) return 'rear_window';
@@ -772,7 +813,10 @@ export class CarViewer {
         p.pivot.quaternion.setFromAxisAngle(p.axis, p.angle * e);
       }
     }
-    if (this.focus.visible) this.focus.scale.setScalar(0.55 + Math.sin(t * 4) * 0.08);
+    // slow pulse of the selected part
+    const pulse = 0.5 - 0.5 * Math.cos(t * 2.6);
+    this.hlMat.opacity = 0.08 + 0.38 * pulse;
+    for (const m of this.hlMeshes || []) m.material.emissiveIntensity = 0.08 + 0.7 * pulse;
     const tgt = this._insetTarget || 0;
     this._inset = (this._inset || 0) + (tgt - (this._inset || 0)) * 0.15;
     if (Math.abs(this._inset - tgt) < 0.5) this._inset = tgt;
@@ -788,22 +832,6 @@ export class CarViewer {
 
 // reference dimensions of the car in metres (Insight ZE4)
 const REF = { L: 4.675, H: 1.41, W: 1.82, WHEEL_X: 1.35, WHEEL_R: 0.33 };
-
-function ringTexture() {
-  const cv = document.createElement('canvas');
-  cv.width = cv.height = 128;
-  const ctx = cv.getContext('2d');
-  const g = ctx.createRadialGradient(64, 64, 20, 64, 64, 64);
-  g.addColorStop(0, 'rgba(61,123,255,0)');
-  g.addColorStop(0.55, 'rgba(61,123,255,0.25)');
-  g.addColorStop(0.75, 'rgba(120,170,255,0.9)');
-  g.addColorStop(1, 'rgba(61,123,255,0)');
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, 128, 128);
-  const tex = new THREE.CanvasTexture(cv);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
-}
 
 const texCache = new Map();
 function dotTexture(color) {

@@ -9,17 +9,17 @@ export const PARTS = {
   tire_fr: { label: '右前タイヤ', words: TIRE_WORDS, exclude: TIRE_EXCLUDE, pos: ['右前', '前右', 'フロント右', '右フロント', 'FR'] },
   tire_rl: { label: '左後タイヤ', words: TIRE_WORDS, exclude: TIRE_EXCLUDE, pos: ['左後', '後左', 'リア左', 'リヤ左', '左リア', '左リヤ', 'RL'] },
   tire_rr: { label: '右後タイヤ', words: TIRE_WORDS, exclude: TIRE_EXCLUDE, pos: ['右後', '後右', 'リア右', 'リヤ右', '右リア', '右リヤ', 'RR'] },
-  windshield: { label: 'フロントガラス', words: ['フロントガラス', 'ウインドシールド', 'ウィンドシールド', 'フロントウィンドウ', 'フロントウインドウ', '飛び石'] },
+  windshield: { label: 'フロントガラス', words: ['フロントガラス', 'ウインドシールド', 'ウィンドシールド', 'フロントウィンドウ', 'フロントウインドウ', '飛び石', 'ワイパー', 'ウォッシャー', 'ウオッシャー', '撥水'] },
+  dashcam: { label: 'ドライブレコーダー', words: ['ドラレコ', 'ドライブレコーダー'] },
   rear_window: { label: 'リアガラス', words: ['リアガラス', 'リヤガラス', 'リアウィンドウ', 'リアウインドウ', 'リヤウィンドウ'] },
   side_window: { label: 'サイドガラス・窓', words: ['サイドガラス', 'ドアガラス', 'パワーウィンドウ', 'パワーウインドウ', '窓'] },
-  wiper: { label: 'ワイパー・ウォッシャー', words: ['ワイパー', 'ウォッシャー', 'ウオッシャー'] },
   body: { label: 'ボディ', words: ['ボディ', 'ボディー', '塗装', '外装', '洗車', 'コーティング', 'ワックス', 'キズ', '傷', 'へこみ', '凹み', 'ドア', 'バンパー', '車体', 'サビ', '錆', 'マフラー', '下回り'], exclude: ['ドアガラス', 'ドアミラー'] },
   engine: { label: 'エンジンルーム', words: ['エンジン', 'オイル', 'バッテリー', '冷却', 'クーラント', 'LLC', 'ラジエーター', 'ラジエータ', 'ベルト', 'エレメント', 'フィルター', 'プラグ', 'ATF', 'CVT', 'ブレーキフルード', 'ブレーキ液', 'ボンネット', 'ミッション'], exclude: ['シートベルト', 'エアコンフィルター'] },
   headlight: { label: 'ヘッドライト・前方灯火', words: ['ヘッドライト', 'ヘッドランプ', 'フォグ', 'ウインカー', 'ウィンカー', 'スモール', 'ライト', 'ランプ', 'バルブ'] , exclude: ['テールランプ', 'テールライト', 'テール', 'ブレーキランプ', 'ブレーキライト', 'バックランプ', 'リアランプ', 'リヤランプ', 'ナンバー灯', 'ルームランプ'] },
   taillight: { label: 'テールランプ・後方灯火', words: ['テール', 'ブレーキランプ', 'ブレーキライト', 'バックランプ', 'リアランプ', 'リヤランプ', 'ナンバー灯', 'ハザード'] },
   mirror: { label: 'ミラー', words: ['ミラー'] },
   fuel: { label: '給油口・燃料', words: ['給油', 'ガソリン', '燃料', 'レギュラー', 'ハイオク', '軽油', '燃費'] },
-  interior: { label: '車内・装備', words: ['エアコン', '車内', '室内', 'シート', 'ベルト類', 'シートベルト', 'ホーン', 'クラクション', 'ルームランプ', 'ナビ', 'ドラレコ', 'ドライブレコーダー', 'ETC', 'エアバッグ', 'ハンドル', 'メーター', '発炎筒', 'キー', 'スマートキー'] },
+  interior: { label: '車内・装備', words: ['エアコン', '車内', '室内', 'シート', 'ベルト類', 'シートベルト', 'ホーン', 'クラクション', 'ルームランプ', 'ナビ', 'ETC', 'エアバッグ', 'ハンドル', 'メーター', '発炎筒', 'キー', 'スマートキー'] },
 };
 export const GENERAL = { id: 'general', label: '車両全般（車検・保険など）' };
 
@@ -56,7 +56,8 @@ export function buildUrl(input, sheetName) {
   const m = raw.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
   const id = m ? m[1] : raw;
   const gid = (raw.match(/[#&?]gid=(\d+)/) || [])[1];
-  let url = `https://docs.google.com/spreadsheets/d/${encodeURIComponent(id)}/gviz/tq?tqx=out:csv`;
+  // JSON keeps real date values (with the year) next to the formatted text
+  let url = `https://docs.google.com/spreadsheets/d/${encodeURIComponent(id)}/gviz/tq?tqx=out:json`;
   if (sheetName) url += `&sheet=${encodeURIComponent(sheetName)}`;
   else if (gid) url += `&gid=${gid}`;
   return url;
@@ -76,8 +77,28 @@ export async function fetchSheet(url) {
   if (/^<(!doctype|html)/i.test(trimmed)) {
     throw new Error('シートを読み取れませんでした。共有設定を「リンクを知っている全員」にするか、「ウェブに公開」してください。');
   }
+  if (trimmed.startsWith('/*O_o*/') || trimmed.startsWith('google.visualization')) return gvizToTable(trimmed);
   if (trimmed.startsWith('[') || trimmed.startsWith('{')) return jsonToTable(JSON.parse(trimmed));
   return parseCSV(text);
+}
+
+// Google Visualization (gviz) JSON -> rows of display strings; dates get their year added if the format hides it
+export function gvizToTable(text) {
+  const json = JSON.parse(text.slice(text.indexOf('(') + 1, text.lastIndexOf(')')));
+  if (json.status === 'error') throw new Error('スプレッドシートを読み取れませんでした。共有設定を確認してください。');
+  const { cols, rows } = json.table;
+  const cell = (c, col) => {
+    if (!c || c.v == null) return c?.f ?? '';
+    let f = c.f ?? String(c.v);
+    if ((col.type === 'date' || col.type === 'datetime') && typeof c.v === 'string') {
+      const m = c.v.match(/Date\((\d{4}),(\d+),(\d+)/);
+      if (m && !/\d{4}/.test(f)) f = `${m[1]}年${f}`;
+    }
+    return f;
+  };
+  const body = rows.map((r) => cols.map((col, i) => cell(r.c[i], col)));
+  const header = cols.map((c) => c.label || '');
+  return header.some(Boolean) ? [header, ...body] : body;
 }
 
 function jsonToTable(json) {
@@ -126,7 +147,7 @@ export function interpret(table, today = new Date()) {
   const rows = [];
   for (const r of clean.slice(hi + 1)) {
     if (!r.some((c) => c)) continue;
-    const cells = headers.map((label, i) => ({ label, value: r[i] || '' })).filter((c) => c.value && !EMPTY.test(c.value));
+    const cells = headers.map((label, i) => ({ label, value: r[i] || '' })).filter((c) => c.value && !EMPTY.test(c.value)).map((c) => ({ ...c, value: c.value.replace(/[ \t]{2,}/g, ' ') }));
     const get = (k) => (col[k] >= 0 ? r[col[k]] || '' : '');
     const all = r.join(' ');
     // parts named in the 部位/カテゴリ, 項目 and 備考/特記事項 columns (or the whole row if none of them exist)
