@@ -279,11 +279,11 @@ function yearBlock(rows, { showParts = false, fuel = false } = {}) {
   if (cost) facts.push(`合計 ¥${Math.round(cost).toLocaleString()}`);
   if (fuel && yearKmL) facts.push(`平均 ${yearKmL.toFixed(1)} km/L`);
   const dots = years.length > 1
-    ? `<div class="yr-dots">${[...years].reverse().map((y) => `<span class="${y === viewYear ? 'on' : ''}"></span>`).join('')}</div>` : '';
+    ? `<div class="yr-dots">${years.map((y) => `<span class="${y === viewYear ? 'on' : ''}"></span>`).join('')}</div>` : '';
   const bar = `<div class="year-bar">
-      <button class="yr-btn" data-year="${older ?? ''}" ${older === undefined ? 'disabled' : ''} aria-label="前の年">‹</button>
+      <button class="yr-btn" ${newer === undefined ? 'disabled' : ''} aria-label="新しい年">‹</button>
       <div class="yr-label"><b>${label}</b><small>${facts.join(' ・ ')}</small>${dots}</div>
-      <button class="yr-btn" data-year="${newer ?? ''}" ${newer === undefined ? 'disabled' : ''} aria-label="次の年">›</button>
+      <button class="yr-btn" ${older === undefined ? 'disabled' : ''} aria-label="古い年">›</button>
     </div>`;
   return bar + sortRows(list).map((r) => itemHTML(r, { showParts })).join('');
 }
@@ -339,7 +339,7 @@ function rerenderPanel() {
 
 $('#panelBody').addEventListener('click', (e) => {
   const yb = e.target.closest('.yr-btn');
-  if (yb && !yb.disabled) { changeYear(yb.getAttribute('aria-label') === '前の年' ? 1 : -1); return; }
+  if (yb && !yb.disabled) { changeYear(yb.getAttribute('aria-label') === '古い年' ? 1 : -1); return; }
   const b = e.target.closest('[data-part]');
   if (!b) return;
   viewer.select(b.dataset.part);
@@ -370,7 +370,7 @@ $('#btnClosePanel').addEventListener('click', closePanel);
     if (sx == null) return;
     const dx = e.changedTouches[0].clientX - sx, dy = e.changedTouches[0].clientY - sy;
     sx = null;
-    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) changeYear(dx > 0 ? 1 : -1); // swipe right = older year
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) changeYear(dx < 0 ? 1 : -1); // older years lie to the right: swipe left = older
   });
 })();
 
