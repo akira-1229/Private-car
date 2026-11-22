@@ -414,7 +414,11 @@ export class CarViewer {
     const markers = [...this.parts.values()].map((p) => p.marker).filter((m) => m && m.visible);
     let hit = this.raycaster.intersectObjects(markers, false)[0];
     let id = hit?.object.userData.partId || null;
-    if (!hit && this.scan) {
+    if (!hit && this.scanKind === 'splat') {
+      // the splat scan is aligned to the built-in model, which stays as an invisible hit target
+      hit = this.raycaster.intersectObjects(this.car.children, true).find((h) => h.object.isMesh && h.object !== this.focus);
+      id = hit?.object.userData.partId || null;
+    } else if (!hit && this.scan) {
       hit = this.raycaster.intersectObject(this.scan, true).find((h) => h.object.isMesh);
       if (hit) {
         const n = hit.face ? hit.face.normal.clone().transformDirection(hit.object.matrixWorld) : new THREE.Vector3(0, 1, 0);
@@ -484,6 +488,7 @@ export class CarViewer {
     const dims = new THREE.Box3().setFromObject(wrap).getSize(new THREE.Vector3());
     this.scanScale = new THREE.Vector3(dims.x / REF.L, dims.y / REF.H, dims.z / REF.W);
     this.scan = wrap;
+    this.scanKind = 'mesh';
     this.scene.add(wrap);
     for (const o of this.car.children) if (!o.isSprite) o.visible = false;
     for (const p of this.parts.values()) {
@@ -493,15 +498,45 @@ export class CarViewer {
     return dims;
   }
 
+  /**
+   * Shows a Gaussian-splat scan (.spz etc.) of the real car.
+   * `matrix` (column-major 4x4) maps the scan into car space: front +X, up +Y, right +Z, metres, ground y = 0.
+   */
+  async loadSplat(source, matrix) {
+    const { SplatMesh, SparkRenderer } = await import('../vendor/spark.module.min.js');
+    if (!this.spark) {
+      this.spark = new SparkRenderer({ renderer: this.renderer });
+      this.scene.add(this.spark);
+    }
+    const opts = typeof source === 'string' ? { url: source } : { fileBytes: source, fileType: 'spz' };
+    const splat = new SplatMesh(opts);
+    await splat.initialized;
+    this.clearModel();
+    const wrap = new THREE.Group();
+    if (matrix) {
+      wrap.matrixAutoUpdate = false;
+      wrap.matrix.fromArray(matrix);
+    }
+    wrap.add(splat);
+    this.scan = wrap;
+    this.scanKind = 'splat';
+    this.scanScale = new THREE.Vector3(1, 1, 1);
+    this.scene.add(wrap);
+    for (const o of this.car.children) if (!o.isSprite) o.visible = false;
+    this.select(this.selected);
+  }
+
   clearModel() {
     if (!this.scan) return;
     this.scene.remove(this.scan);
     this.scan.traverse((o) => {
+      if (o.dispose && !o.isMesh) o.dispose();
       if (!o.isMesh) return;
-      o.geometry.dispose();
-      for (const m of [].concat(o.material)) { m.map?.dispose(); m.dispose(); }
+      o.geometry?.dispose();
+      for (const m of [].concat(o.material || [])) { m.map?.dispose(); m.dispose(); }
     });
     this.scan = null;
+    this.scanKind = null;
     for (const o of this.car.children) if (!o.isSprite) o.visible = true;
     for (const p of this.parts.values()) if (p.marker && p.anchor) p.marker.position.copy(p.anchor);
     this.focus.visible = false;

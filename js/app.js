@@ -78,9 +78,24 @@ async function loadModel() {
   if (saved?.blob) { src = await saved.blob.arrayBuffer(); modelLabel = `${saved.name}（${mb(saved.blob.size)}・この端末に保存）`; }
   else if (settings.modelUrl) { src = settings.modelUrl; modelLabel = settings.modelUrl; }
   else {
+    // a scan committed to the repository: models/car.json (Gaussian splat + alignment) or models/car.glb
     try {
-      const r = await fetch('models/car.glb', { method: 'HEAD', cache: 'no-store' });
-      if (r.ok) { src = 'models/car.glb'; modelLabel = 'models/car.glb（リポジトリ内）'; }
+      const r = await fetch('models/car.json', { cache: 'no-store' });
+      if (r.ok) {
+        const cfg = await r.json();
+        $('#hint').textContent = '実車スキャンを読み込み中…';
+        try {
+          await viewer.loadSplat(`models/${cfg.file}`, cfg.matrix);
+          modelLabel = `models/${cfg.file}（実車スキャン）`;
+        } catch (e) {
+          showError(`実車スキャンを表示できませんでした（${e.message || e}）`);
+        } finally {
+          $('#hint').textContent = 'ドラッグで回転 ・ ピンチで拡大 ・ 部位をタップ';
+        }
+        return;
+      }
+      const g = await fetch('models/car.glb', { method: 'HEAD', cache: 'no-store' });
+      if (g.ok) { src = 'models/car.glb'; modelLabel = 'models/car.glb（リポジトリ内）'; }
     } catch { /* none */ }
   }
   if (!src) { viewer.clearModel(); modelLabel = ''; return; }
