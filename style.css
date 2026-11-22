@@ -244,3 +244,12 @@ dialog form { max-height: calc(100dvh - 40px); overflow-y: auto; }
   transition: opacity 0.25s, transform 0.25s;
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+.update-banner {
+  position: absolute; z-index: 7; left: 16px; right: 16px; top: calc(var(--safe-t) + 66px);
+  min-height: 44px; padding: 10px 14px; border-radius: 12px; cursor: pointer;
+  font-size: 14px; color: #fff; text-align: center;
+  background: linear-gradient(90deg, #3a6fe0, #5b8cff); border: 0;
+  box-shadow: 0 6px 20px rgba(40, 90, 220, 0.4);
+}
+.update-banner[hidden] { display: none; }

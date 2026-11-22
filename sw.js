@@ -1,9 +1,10 @@
 // Network-first cache for the app shell so the app opens offline.
 // Spreadsheet requests (other origins) are never cached here; the app keeps its own copy.
-const CACHE = 'carapp-v12';
+// __BUILD__ is replaced on every deploy, so each release gets a fresh cache
+const CACHE = 'carapp-__BUILD__';
 const SHELL = [
   './', 'index.html', 'style.css', 'manifest.webmanifest',
-  'js/app.js', 'js/car.js', 'js/body.js', 'js/sheet.js', 'js/demo.js',
+  'js/app.js', 'js/car.js', 'js/body.js', 'js/garage.js', 'js/sheet.js', 'js/demo.js',
   'vendor/three.module.min.js', 'vendor/three.core.min.js', 'vendor/OrbitControls.js', 'vendor/RoomEnvironment.js',
   'vendor/GLTFLoader.js', 'vendor/utils/BufferGeometryUtils.js',
   'icons/icon-180.png', 'icons/icon-192.png',
@@ -21,8 +22,10 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== location.origin) return;
+  if (url.pathname.endsWith('/version.json')) return; // always straight from the network
+  // revalidate with the server every time (cheap 304s), fall back to the cache when offline
   e.respondWith(
-    fetch(e.request)
+    fetch(e.request, { cache: 'no-cache' })
       .then((res) => {
         const copy = res.clone();
         caches.open(CACHE).then((c) => c.put(e.request, copy));

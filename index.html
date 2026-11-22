@@ -8,6 +8,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="マイカー">
   <meta name="theme-color" content="#0b1220">
+  <meta name="app-build" content="__BUILD__">
   <title>マイカー点検</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" href="icons/icon-180.png?v=5">
@@ -37,6 +38,7 @@
       デモデータを表示中です。<button id="btnOpenSettings2" class="link">設定</button>からスプレッドシートを連携してください。
     </div>
     <div id="errorBanner" class="banner error" hidden></div>
+    <button id="updateBanner" class="update-banner" hidden>✨ 新しいバージョンがあります　<b>タップで更新</b></button>
 
     <div id="viewer" aria-label="車の3Dモデル（ドラッグで回転・タップで詳細）"></div>
     <p class="hint" id="hint">ドラッグで回転 ・ タップで記録 ・ ダブルタップでドア開閉</p>

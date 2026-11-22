@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { OrbitControls } from '../vendor/OrbitControls.js';
 import { RoomEnvironment } from '../vendor/RoomEnvironment.js';
 import { GLTFLoader } from '../vendor/GLTFLoader.js';
+import { buildGarage } from './garage.js';
 import { buildBody, surfacePoint, dloOutline, GLASS, WHEELS, X_FRONT, X_REAR } from './body.js';
 
 const LEVEL_COLORS = { bad: '#ff5a5f', warn: '#f5b83d', ok: '#34c77b' };
@@ -378,23 +379,9 @@ export class CarViewer {
   }
 
   #buildShadow() {
-    // soft studio floor light so a dark car still stands out
-    const spot = document.createElement('canvas');
-    spot.width = spot.height = 256;
-    const sctx = spot.getContext('2d');
-    const sg = sctx.createRadialGradient(128, 128, 0, 128, 128, 128);
-    sg.addColorStop(0, 'rgba(150,175,215,0.35)');
-    sg.addColorStop(0.6, 'rgba(110,135,180,0.12)');
-    sg.addColorStop(1, 'rgba(90,110,150,0)');
-    sctx.fillStyle = sg;
-    sctx.fillRect(0, 0, 256, 256);
-    const floor = new THREE.Mesh(
-      new THREE.CircleGeometry(4.6, 64),
-      new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(spot), transparent: true, depthWrite: false }),
-    );
-    floor.rotation.x = -Math.PI / 2;
-    floor.position.y = 0.001;
-    this.scene.add(floor);
+    // the car sits in a clean private garage
+    this.garage = buildGarage();
+    this.scene.add(this.garage);
 
     const cv = document.createElement('canvas');
     cv.width = cv.height = 256;
@@ -413,12 +400,6 @@ export class CarViewer {
     m.position.y = 0.002;
     this.scene.add(m);
 
-    const ring = new THREE.Mesh(
-      new THREE.RingGeometry(3.45, 3.49, 96),
-      new THREE.MeshBasicMaterial({ color: 0x8fb0e8, transparent: true, opacity: 0.22, side: THREE.DoubleSide }),
-    );
-    ring.rotation.x = -Math.PI / 2;
-    this.scene.add(ring);
   }
 
   // ---------- interaction ----------
@@ -832,6 +813,7 @@ export class CarViewer {
       this.camera.setViewOffset(w / pr, h / pr, 0, this._inset * 0.45, w / pr, h / pr);
     } else if (this.camera.view) this.camera.clearViewOffset();
     this.controls.update();
+    this.garage?.userData.update(this.camera);
     this.renderer.render(this.scene, this.camera);
   }
 }

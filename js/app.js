@@ -364,10 +364,36 @@ $('#btnClearModel').addEventListener('click', async () => {
 
 $('#btnRefresh').addEventListener('click', () => refresh({ manual: true }));
 
+// ---------- update notice ----------
+// index.html carries the build number stamped at deploy time; version.json always has the latest one.
+const BUILD = document.querySelector('meta[name="app-build"]')?.content || '';
+async function checkUpdate() {
+  if (!BUILD || BUILD.startsWith('__')) return; // local copy without a build number
+  try {
+    const r = await fetch(`version.json?ts=${Date.now()}`, { cache: 'no-store' });
+    if (!r.ok) return;
+    const { build } = await r.json();
+    $('#updateBanner').hidden = !build || build === BUILD;
+  } catch { /* offline */ }
+}
+$('#updateBanner').addEventListener('click', async () => {
+  $('#updateBanner').textContent = '更新しています…';
+  try {
+    const regs = (await navigator.serviceWorker?.getRegistrations()) || [];
+    await Promise.all(regs.map((r) => r.update().catch(() => {})));
+    const keys = await caches.keys();
+    await Promise.all(keys.map((k) => caches.delete(k)));
+  } catch { /* ignore */ }
+  location.reload();
+});
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkUpdate(); });
+setInterval(checkUpdate, 10 * 60000);
+
 // ---------- start ----------
 refresh();
 schedule();
 loadModel();
+checkUpdate();
 
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
   navigator.serviceWorker.register('sw.js').catch(() => {});
