@@ -5,7 +5,8 @@ import { DEMO_CSV } from './demo.js';
 const $ = (s) => document.querySelector(s);
 const SETTINGS_KEY = 'carapp.settings.v1';
 const CACHE_KEY = 'carapp.cache.v1';
-const DEFAULTS = { sheet: '', sheetName: '', interval: 5, carName: 'インサイト', bodyColor: '#080c0b', plateRegion: '岐阜 303', plateKana: 'の', plateNumber: '55-10', modelUrl: '', modelFlip: false };
+const DEFAULT_SHEET = 'https://docs.google.com/spreadsheets/d/1-BuCzgFYa1fTVGN5v-L4rzbnQeDGJk0MMLSlXrWCPR0/edit';
+const DEFAULTS = { sheet: DEFAULT_SHEET, sheetName: '', interval: 5, carName: 'インサイト', bodyColor: '#080c0b', plateRegion: '岐阜 303', plateKana: 'の', plateNumber: '55-10', modelUrl: '', modelFlip: false };
 
 // ---------- storage (wrapped: private mode can throw) ----------
 const store = {
@@ -16,6 +17,7 @@ const store = {
 // Settings may also be passed in the URL once (?sheet=...&name=...), handy for sharing to the iPhone.
 function loadSettings() {
   const s = { ...DEFAULTS, ...store.get(SETTINGS_KEY, {}) };
+  if (!s.sheet) s.sheet = DEFAULT_SHEET;
   const q = new URLSearchParams(location.search);
   let changed = false;
   for (const [qk, sk] of [['sheet', 'sheet'], ['tab', 'sheetName'], ['name', 'carName'], ['color', 'bodyColor']]) {

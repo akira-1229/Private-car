@@ -53,7 +53,12 @@ export function buildUrl(input, sheetName) {
 
 export async function fetchSheet(url) {
   const sep = url.includes('?') ? '&' : '?';
-  const res = await fetch(`${url}${sep}_ts=${Date.now()}`, { cache: 'no-store', redirect: 'follow' });
+  let res;
+  try {
+    res = await fetch(`${url}${sep}_ts=${Date.now()}`, { cache: 'no-store', redirect: 'follow' });
+  } catch {
+    throw new Error('スプレッドシートを読み取れませんでした。共有設定を「リンクを知っている全員（閲覧者）」にしてください（電波がない場合も表示されます）。');
+  }
   if (!res.ok) throw new Error(`取得に失敗しました（HTTP ${res.status}）`);
   const text = await res.text();
   const trimmed = text.trim();

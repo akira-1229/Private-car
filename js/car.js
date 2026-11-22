@@ -518,12 +518,25 @@ export class CarViewer {
       wrap.matrix.fromArray(matrix);
     }
     wrap.add(splat);
-    this.scan = wrap;
+    this.scan = new THREE.Group();
+    this.scan.add(wrap, this.#splatCore());
     this.scanKind = 'splat';
     this.scanScale = new THREE.Vector3(1, 1, 1);
-    this.scene.add(wrap);
+    this.scene.add(this.scan);
     for (const o of this.car.children) if (!o.isSprite) o.visible = false;
     this.select(this.selected);
+  }
+
+  // A matte black body slightly smaller than the scan, so the background never shows through
+  // the semi-transparent splats of the dark paint and glass.
+  #splatCore() {
+    const g = buildBody();
+    const mat = new THREE.MeshBasicMaterial({ color: 0x040506 });
+    const core = new THREE.Group();
+    for (const geo of Object.values(g)) core.add(new THREE.Mesh(geo, mat));
+    core.scale.set(0.95, 0.9, 0.93);
+    core.position.x = 0.03;
+    return core;
   }
 
   clearModel() {
