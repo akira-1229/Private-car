@@ -306,8 +306,14 @@ export class CarViewer {
     lidEdge.scale.x = 1.15;
     lidEdge.rotation.y = Math.PI;
     lidEdge.position.set(lidPos.x, lidPos.y, -lidPos.z - 0.001);
+    // larger invisible tap / glow area around the lid so it is easy to hit with a finger
+    const lidHit = new THREE.Mesh(new THREE.CircleGeometry(0.16, 32),
+      new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+    lidHit.scale.x = 1.2;
+    lidHit.rotation.y = Math.PI;
+    lidHit.position.set(lidPos.x, lidPos.y, -lidPos.z - 0.008);
     const fuel = new THREE.Group();
-    fuel.add(lid, lidEdge);
+    fuel.add(lid, lidEdge, lidHit);
     this.#part('fuel', fuel, [lidPos.x, lidPos.y + 0.05, -lidPos.z - 0.12]);
 
     // ---- wheels: 18-inch fine multi-spoke ----

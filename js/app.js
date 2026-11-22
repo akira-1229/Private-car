@@ -258,16 +258,62 @@ function sortRows(rows) {
   return [...rows].sort((a, b) => rank(b.level) - rank(a.level) || b.idx - a.idx);
 }
 
+// ---- records are shown one year at a time; swipe left/right (or ‹ ›) to change the year ----
+let viewYear = null;
+function yearsOf(rows) {
+  const ys = [...new Set(rows.map((r) => r.year ?? null))];
+  return ys.sort((a, b) => (b ?? -1) - (a ?? -1)); // newest first, "no date" last
+}
+function yearBlock(rows, { showParts = false, fuel = false } = {}) {
+  const years = yearsOf(rows);
+  if (!years.includes(viewYear)) viewYear = years[0] ?? null;
+  const list = rows.filter((r) => (r.year ?? null) === viewYear);
+  const i = years.indexOf(viewYear);
+  const older = years[i + 1], newer = years[i - 1];
+  const label = viewYear == null ? '日付なしの記録' : `${viewYear}年の記録`;
+  const cost = list.reduce((s, r) => s + (r.cost || 0), 0);
+  const legs = list.filter((r) => r.kmL);
+  const yearKmL = legs.length ? legs.reduce((s, r) => s + r.leg, 0) / legs.reduce((s, r) => s + r.fuel, 0) : null;
+  const facts = [`${list.length}件`];
+  if (fuel) facts.push(`給油 ${list.filter((r) => r.fuel).length}回`);
+  if (cost) facts.push(`合計 ¥${Math.round(cost).toLocaleString()}`);
+  if (fuel && yearKmL) facts.push(`平均 ${yearKmL.toFixed(1)} km/L`);
+  const dots = years.length > 1
+    ? `<div class="yr-dots">${[...years].reverse().map((y) => `<span class="${y === viewYear ? 'on' : ''}"></span>`).join('')}</div>` : '';
+  const bar = `<div class="year-bar">
+      <button class="yr-btn" data-year="${older ?? ''}" ${older === undefined ? 'disabled' : ''} aria-label="前の年">‹</button>
+      <div class="yr-label"><b>${label}</b><small>${facts.join(' ・ ')}</small>${dots}</div>
+      <button class="yr-btn" data-year="${newer ?? ''}" ${newer === undefined ? 'disabled' : ''} aria-label="次の年">›</button>
+    </div>`;
+  return bar + sortRows(list).map((r) => itemHTML(r, { showParts })).join('');
+}
+function changeYear(dir) {
+  const rows = currentRows();
+  const years = yearsOf(rows);
+  const i = years.indexOf(viewYear);
+  const j = i + dir; // +1 = older, -1 = newer
+  if (j < 0 || j >= years.length) return;
+  viewYear = years[j];
+  rerenderPanel();
+}
+function currentRows() {
+  if (!currentView || !data) return [];
+  if (currentView.type === 'part') return data.byPart[currentView.id] || [];
+  if (currentView.type === 'general') return data.byPart.general;
+  if (currentView.type === 'attention') return data.rows.filter((r) => r.level === 'bad' || r.level === 'warn');
+  return data.rows;
+}
+
 function openPart(id) {
   currentView = { type: 'part', id };
   const rows = data?.byPart[id] || [];
   const lv = data?.levels[id] || 'none';
   $('#panelTitle').textContent = PARTS[id]?.label || id;
   $('#panelSub').innerHTML = rows.length
-    ? `<span class="dot ${lv}"></span> ${LEVEL_LABEL[lv]} ・ ${rows.length}件の記録`
+    ? `<span class="dot ${lv}"></span> ${LEVEL_LABEL[lv]} ・ 全${rows.length}件の記録`
     : '点検管理表に該当する記録がありません';
   $('#panelBody').innerHTML = rows.length
-    ? sortRows(rows).map((r) => itemHTML(r)).join('')
+    ? yearBlock(rows, { fuel: id === 'fuel' })
     : `<p class="empty">「${esc(PARTS[id]?.label)}」に関する行が見つかりませんでした。<br>部位列に「${esc(PARTS[id]?.words[0])}」などの言葉を入れると表示されます。</p>`;
   showPanel();
 }
@@ -279,9 +325,9 @@ function openList(type) {
   else if (type === 'attention') { rows = data.rows.filter((r) => r.level === 'bad' || r.level === 'warn'); title = '要確認の項目'; }
   else { rows = data.rows; title = 'すべての記録'; }
   $('#panelTitle').textContent = title;
-  $('#panelSub').textContent = `${rows.length}件`;
+  $('#panelSub').textContent = `全${rows.length}件`;
   $('#panelBody').innerHTML = rows.length
-    ? sortRows(rows).map((r) => itemHTML(r, { showParts: true })).join('')
+    ? yearBlock(rows, { showParts: true })
     : '<p class="empty">要確認の項目はありません 👍</p>';
   showPanel();
 }
@@ -292,6 +338,8 @@ function rerenderPanel() {
 }
 
 $('#panelBody').addEventListener('click', (e) => {
+  const yb = e.target.closest('.yr-btn');
+  if (yb && !yb.disabled) { changeYear(yb.getAttribute('aria-label') === '前の年' ? 1 : -1); return; }
   const b = e.target.closest('[data-part]');
   if (!b) return;
   viewer.select(b.dataset.part);
@@ -312,6 +360,19 @@ function closePanel() {
   viewer.setBottomInset(0);
 }
 $('#btnClosePanel').addEventListener('click', closePanel);
+
+// swipe left / right on the records to change the year
+(() => {
+  let sx = null, sy = 0;
+  const body = $('#panelBody');
+  body.addEventListener('touchstart', (e) => { sx = e.touches[0].clientX; sy = e.touches[0].clientY; }, { passive: true });
+  body.addEventListener('touchend', (e) => {
+    if (sx == null) return;
+    const dx = e.changedTouches[0].clientX - sx, dy = e.changedTouches[0].clientY - sy;
+    sx = null;
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) changeYear(dx > 0 ? 1 : -1); // swipe right = older year
+  });
+})();
 
 // swipe down on the sheet header to close
 (() => {

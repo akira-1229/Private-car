@@ -18,7 +18,7 @@ export const PARTS = {
   headlight: { label: 'ヘッドライト・前方灯火', words: ['ヘッドライト', 'ヘッドランプ', 'フォグ', 'ウインカー', 'ウィンカー', 'スモール', 'ライト', 'ランプ', 'バルブ'] , exclude: ['テールランプ', 'テールライト', 'テール', 'ブレーキランプ', 'ブレーキライト', 'バックランプ', 'リアランプ', 'リヤランプ', 'ナンバー灯', 'ルームランプ'] },
   taillight: { label: 'テールランプ・後方灯火', words: ['テール', 'ブレーキランプ', 'ブレーキライト', 'バックランプ', 'リアランプ', 'リヤランプ', 'ナンバー灯', 'ハザード'] },
   mirror: { label: 'ミラー', words: ['ミラー'] },
-  fuel: { label: '給油口・燃料', words: ['給油', 'ガソリン', '燃料', 'レギュラー', 'ハイオク', '軽油', '燃費'] },
+  fuel: { label: '給油履歴', words: ['給油', 'ガソリン', '燃料', 'レギュラー', 'ハイオク', '軽油', '燃費'] },
   interior: { label: '車内・装備', words: ['エアコン', '車内', '室内', 'シート', 'ベルト類', 'シートベルト', 'ホーン', 'クラクション', 'ルームランプ', 'ナビ', 'ETC', 'エアバッグ', 'ハンドル', 'メーター', '発炎筒', 'キー', 'スマートキー'] },
 };
 export const GENERAL = { id: 'general', label: '車両全般（車検・保険など）' };
@@ -159,7 +159,9 @@ export function interpret(table, today = new Date()) {
     const title = [get('part'), get('item')].filter(Boolean).join(' / ') || r.find(Boolean) || '(無題)';
     const sub = [get('date').replace(/\s+/g, ' '), shop].filter(Boolean).join(' ・ ');
     const { level, reasons } = evaluate(get('status'), col.status >= 0, all, get('next'), today);
-    rows.push({ idx: rows.length, title, sub, cells, level, reasons, parts, next: get('next'), status: get('status'),
+    // year of the record: from the date column, else from any cell that looks like a date
+    const ym = (get('date').match(/(\d{4})\s*[年/.-]/) || all.match(/(20\d{2}|19\d{2})\s*[年/.-]\s*\d{1,2}/) || [])[1];
+    rows.push({ idx: rows.length, year: ym ? +ym : null, title, sub, cells, level, reasons, parts, next: get('next'), status: get('status'),
       fuel: num(get('fuel')), odo: num(get('odo')), cost: num(get('cost')) });
   }
 
