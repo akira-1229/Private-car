@@ -276,6 +276,20 @@ export class CarViewer {
     }
     this.#part('mirror', mirrors, [0.48, 1.17, W + 0.17]);
 
+    // ---- fuel lid (left rear quarter) ----
+    const lidPos = surf(-1.72, 0.86, 0.006);
+    const lid = new THREE.Mesh(new THREE.CircleGeometry(0.085, 32), this.bodyMat);
+    lid.scale.x = 1.15;
+    lid.rotation.y = Math.PI;
+    lid.position.set(lidPos.x, lidPos.y, -lidPos.z);
+    const lidEdge = new THREE.Mesh(new THREE.RingGeometry(0.084, 0.09, 40), trimMat);
+    lidEdge.scale.x = 1.15;
+    lidEdge.rotation.y = Math.PI;
+    lidEdge.position.set(lidPos.x, lidPos.y, -lidPos.z - 0.001);
+    const fuel = new THREE.Group();
+    fuel.add(lid, lidEdge);
+    this.#part('fuel', fuel, [lidPos.x, lidPos.y + 0.05, -lidPos.z - 0.12]);
+
     // ---- wheels: 18-inch fine multi-spoke ----
     const wheelDefs = [
       ['tire_fl', WHEEL_X, -1], ['tire_fr', WHEEL_X, 1],

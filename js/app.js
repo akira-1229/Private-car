@@ -183,18 +183,23 @@ function renderSummary() {
   const chips = [];
   if (bad || warn) {
     chips.push(`<button class="chip" data-view="attention"><span class="dot ${bad ? 'bad' : 'warn'}"></span>要確認 <b>${bad + warn}</b>件</button>`);
-  } else {
+  } else if (data.rows.some((r) => r.level === 'ok')) {
     chips.push(`<button class="chip" data-view="attention"><span class="dot ok"></span>すべて良好</button>`);
   }
   if (data.byPart.general.length) {
     chips.push(`<button class="chip" data-view="general"><span class="dot ${data.levels.general}"></span>車両全般 <b>${data.byPart.general.length}</b></button>`);
   }
-  chips.push(`<button class="chip" data-view="all">すべての項目 <b>${data.rows.length}</b></button>`);
+  const st = data.stats || {};
+  if (st.avgKmL) chips.push(`<button class="chip" data-part="fuel">⛽ 平均燃費 <b>${st.avgKmL.toFixed(1)}</b> km/L</button>`);
+  if (st.lastOdo) chips.push(`<button class="chip" data-view="all">🛣️ <b>${st.lastOdo.toLocaleString()}</b> km</button>`);
+  chips.push(`<button class="chip" data-view="all">すべての記録 <b>${data.rows.length}</b></button>`);
   // AirTag: Apple offers no API for Find My, so open the 探す app's 持ち物 tab directly
   chips.push(`<a class="chip" href="findmy://items">📍 車の現在地（探す）</a>`);
   nav.innerHTML = chips.join('');
 }
 $('#summary').addEventListener('click', (e) => {
+  const p = e.target.closest('[data-part]');
+  if (p) { viewer.select(p.dataset.part); openPart(p.dataset.part); return; }
   const b = e.target.closest('[data-view]');
   if (!b) return;
   viewer.select(null);
@@ -210,14 +215,16 @@ function itemHTML(row, { showParts = false } = {}) {
     ? `<p class="reason">${row.parts.map((id) => `<button class="part-link" data-part="${id}">${esc(PARTS[id].label)}</button>`).join(' ・ ')}</p>`
     : '';
   return `<article class="item">
-    <div class="item-head"><span class="item-title">${esc(row.title)}</span><span class="badge ${row.level}">${LEVEL_LABEL[row.level]}</span></div>
+    <div class="item-head"><span class="item-title">${esc(row.title)}</span><span class="badge ${row.level}">${row.level === 'none' && row.cost != null ? `¥${row.cost.toLocaleString()}` : LEVEL_LABEL[row.level]}</span></div>
+    ${row.sub ? `<p class="item-sub">${esc(row.sub)}</p>` : ''}
     ${row.reasons.length ? `<p class="reason">${esc(row.reasons.join(' ・ '))}</p>` : ''}
     <dl class="kv">${kv}</dl>${parts}
   </article>`;
 }
 
 function sortRows(rows) {
-  return [...rows].sort((a, b) => rank(b.level) - rank(a.level));
+  // most urgent first, then newest first (the sheet is a chronological log)
+  return [...rows].sort((a, b) => rank(b.level) - rank(a.level) || b.idx - a.idx);
 }
 
 function openPart(id) {
@@ -239,7 +246,7 @@ function openList(type) {
   let rows, title;
   if (type === 'general') { rows = data.byPart.general; title = GENERAL.label; }
   else if (type === 'attention') { rows = data.rows.filter((r) => r.level === 'bad' || r.level === 'warn'); title = '要確認の項目'; }
-  else { rows = data.rows; title = 'すべての項目'; }
+  else { rows = data.rows; title = 'すべての記録'; }
   $('#panelTitle').textContent = title;
   $('#panelSub').textContent = `${rows.length}件`;
   $('#panelBody').innerHTML = rows.length

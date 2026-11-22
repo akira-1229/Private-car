@@ -1,6 +1,6 @@
 // Network-first cache for the app shell so the app opens offline.
 // Spreadsheet requests (other origins) are never cached here; the app keeps its own copy.
-const CACHE = 'carapp-v6';
+const CACHE = 'carapp-v7';
 const SHELL = [
   './', 'index.html', 'style.css', 'manifest.webmanifest',
   'js/app.js', 'js/car.js', 'js/body.js', 'js/sheet.js', 'js/demo.js',

@@ -18,6 +18,7 @@ export const PARTS = {
   headlight: { label: 'ヘッドライト・前方灯火', words: ['ヘッドライト', 'ヘッドランプ', 'フォグ', 'ウインカー', 'ウィンカー', 'スモール', 'ライト', 'ランプ', 'バルブ'] , exclude: ['テールランプ', 'テールライト', 'テール', 'ブレーキランプ', 'ブレーキライト', 'バックランプ', 'リアランプ', 'リヤランプ', 'ナンバー灯', 'ルームランプ'] },
   taillight: { label: 'テールランプ・後方灯火', words: ['テール', 'ブレーキランプ', 'ブレーキライト', 'バックランプ', 'リアランプ', 'リヤランプ', 'ナンバー灯', 'ハザード'] },
   mirror: { label: 'ミラー', words: ['ミラー'] },
+  fuel: { label: '給油口・燃料', words: ['給油', 'ガソリン', '燃料', 'レギュラー', 'ハイオク', '軽油', '燃費'] },
   interior: { label: '車内・装備', words: ['エアコン', '車内', '室内', 'シート', 'ベルト類', 'シートベルト', 'ホーン', 'クラクション', 'ルームランプ', 'ナビ', 'ドラレコ', 'ドライブレコーダー', 'ETC', 'エアバッグ', 'ハンドル', 'メーター', '発炎筒', 'キー', 'スマートキー'] },
 };
 export const GENERAL = { id: 'general', label: '車両全般（車検・保険など）' };
@@ -28,7 +29,17 @@ const HEADER_RX = {
   status: /状態|結果|判定|ステータス|状況|評価/,
   next: /次回|期限|予定|交換時期|満了/,
   last: /前回|実施日|点検日|最終|交換日|実施/,
-  note: /備考|メモ|コメント|詳細/,
+  note: /備考|メモ|コメント|詳細|特記|事項/,
+  date: /日時|日付|年月日|^日$/,
+  shop: /会社|店舗|店名|業者|ショップ|場所名/,
+  cost: /料金|金額|費用|代金|価格/,
+  fuel: /給油量|数量|リットル|リッター|ℓ/,
+  odo: /距離|走行|ODO|オドメーター/i,
+};
+const EMPTY = /^[-－−ー―]+$/;
+const num = (v) => {
+  const n = parseFloat(String(v).replace(/[^0-9.\-]/g, ''));
+  return Number.isFinite(n) ? n : null;
 };
 
 const BAD_WORDS = ['要交換', '不良', 'NG', '×', '✕', '異常', '要修理', '期限切れ', '故障', '交換必要', '危険'];
@@ -115,16 +126,40 @@ export function interpret(table, today = new Date()) {
   const rows = [];
   for (const r of clean.slice(hi + 1)) {
     if (!r.some((c) => c)) continue;
-    const cells = headers.map((label, i) => ({ label, value: r[i] || '' })).filter((c) => c.value);
+    const cells = headers.map((label, i) => ({ label, value: r[i] || '' })).filter((c) => c.value && !EMPTY.test(c.value));
     const get = (k) => (col[k] >= 0 ? r[col[k]] || '' : '');
     const all = r.join(' ');
-    // the 部位 column wins; fall back to 部位+項目, then the whole row
-    let parts = get('part') ? matchParts(get('part')) : [];
-    if (!parts.length) parts = matchParts(col.part >= 0 || col.item >= 0 ? `${get('part')} ${get('item')}` : all);
+    // parts named in the 部位/カテゴリ, 項目 and 備考/特記事項 columns (or the whole row if none of them exist)
+    const fields = ['part', 'item', 'note'].filter((k) => col[k] >= 0).map(get).filter((v) => v && !EMPTY.test(v));
+    const parts = col.part >= 0 || col.item >= 0 || col.note >= 0
+      ? [...new Set(fields.flatMap((f) => matchParts(f)))]
+      : matchParts(all);
+    const shop = [col.shop >= 0 ? headers.map((h, i) => (HEADER_RX.shop.test(h) ? r[i] : '')).filter((v) => v && !EMPTY.test(v)).join(' ') : ''][0];
     const title = [get('part'), get('item')].filter(Boolean).join(' / ') || r.find(Boolean) || '(無題)';
+    const sub = [get('date').replace(/\s+/g, ' '), shop].filter(Boolean).join(' ・ ');
     const { level, reasons } = evaluate(get('status'), col.status >= 0, all, get('next'), today);
-    rows.push({ title, cells, level, reasons, parts, next: get('next'), status: get('status') });
+    rows.push({ idx: rows.length, title, sub, cells, level, reasons, parts, next: get('next'), status: get('status'),
+      fuel: num(get('fuel')), odo: num(get('odo')), cost: num(get('cost')) });
   }
+
+  // fuel economy between fill-ups (rows are a chronological log)
+  const stats = { fills: 0, avgKmL: null, lastOdo: null, totalCost: 0, fuelCost: 0 };
+  let prevOdo = null, dist = 0, litres = 0;
+  for (const row of rows) {
+    if (row.odo) stats.lastOdo = Math.max(stats.lastOdo || 0, row.odo);
+    if (row.cost) stats.totalCost += row.cost;
+    if (!row.fuel || !row.odo) continue;
+    stats.fills++;
+    if (row.cost) stats.fuelCost += row.cost;
+    if (prevOdo != null && row.odo > prevOdo) {
+      const kmL = (row.odo - prevOdo) / row.fuel;
+      row.reasons.unshift(`燃費 ${kmL.toFixed(1)} km/L（前回給油から ${(row.odo - prevOdo).toLocaleString()} km）`);
+      dist += row.odo - prevOdo;
+      litres += row.fuel;
+    }
+    prevOdo = row.odo;
+  }
+  if (litres > 0) stats.avgKmL = dist / litres;
 
   const byPart = {};
   const levels = {};
@@ -134,7 +169,7 @@ export function interpret(table, today = new Date()) {
     for (const id of ids) byPart[id].push(row);
   }
   for (const [id, list] of Object.entries(byPart)) levels[id] = worst(list.map((r) => r.level));
-  return { headers, rows, byPart, levels };
+  return { headers, rows, byPart, levels, stats };
 }
 
 function includesAny(text, words) {
