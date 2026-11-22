@@ -1,5 +1,5 @@
 import { CarViewer } from './car.js';
-import { PARTS, GENERAL, buildUrl, fetchSheet, interpret, parseCSV, rank, LEVEL_LABEL } from './sheet.js';
+import { PARTS, GENERAL, buildUrl, fetchSheet, fetchBook, interpret, parseCSV, rank, LEVEL_LABEL } from './sheet.js';
 import { DEMO_CSV } from './demo.js';
 
 const $ = (s) => document.querySelector(s);
@@ -136,7 +136,7 @@ function apply(table, source) {
   viewer.setLevels(data.levels);
   renderSummary();
   // feed the garage TV
-  const fills = data.rows.filter((r) => r.kmL);
+  const fills = data.rows.filter((r) => r.kmL && (!data.stats.car || r.car === data.stats.car));
   const date = (r) => (r.sub || '').split(' ・ ')[0].replace(/\s*\(.\)/, '');
   const byKm = [...fills].sort((a, b) => b.kmL - a.kmL);
   const last = fills[fills.length - 1];
@@ -145,7 +145,7 @@ function apply(table, source) {
     lastKmL: last?.kmL, lastDate: last && date(last),
     best: byKm[0] && { kmL: byKm[0].kmL, date: date(byKm[0]) },
     worst: byKm.length && { kmL: byKm[byKm.length - 1].kmL, date: date(byKm[byKm.length - 1]) },
-    perFill: fills.length ? fills.reduce((s, r) => s + r.leg, 0) / fills.length : null,
+    perFill: data.stats.fills && data.stats.lastOdo && data.stats.firstOdo ? (data.stats.lastOdo - data.stats.firstOdo) / Math.max(1, data.stats.fills - 1) : null,
   });
   if (currentView) rerenderPanel();
   $('#demoBanner').hidden = source !== 'demo';
@@ -163,7 +163,7 @@ async function refresh({ manual = false } = {}) {
   loading = true;
   $('#btnRefresh').classList.add('spinning');
   try {
-    const table = await fetchSheet(url);
+    const table = await fetchBook(url, { full: manual });
     apply(table, 'sheet');
     lastSync = new Date();
     store.set(CACHE_KEY, { url, table, at: lastSync.toISOString() });
@@ -273,7 +273,7 @@ function yearBlock(rows, { showParts = false, fuel = false } = {}) {
   const label = viewYear == null ? '日付なしの記録' : `${viewYear}年の記録`;
   const cost = list.reduce((s, r) => s + (r.cost || 0), 0);
   const legs = list.filter((r) => r.kmL);
-  const yearKmL = legs.length ? legs.reduce((s, r) => s + r.leg, 0) / legs.reduce((s, r) => s + r.fuel, 0) : null;
+  const yearKmL = legs.length ? legs.reduce((s, r) => s + r.leg, 0) / legs.reduce((s, r) => s + (r.legFuel || r.fuel), 0) : null;
   const facts = [`${list.length}件`];
   if (fuel) facts.push(`給油 ${list.filter((r) => r.fuel).length}回`);
   if (cost) facts.push(`合計 ¥${Math.round(cost).toLocaleString()}`);

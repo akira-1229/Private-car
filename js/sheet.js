@@ -35,6 +35,7 @@ const HEADER_RX = {
   cost: /料金|金額|費用|代金|価格/,
   fuel: /給油量|数量|リットル|リッター|ℓ/,
   odo: /距離|走行|ODO|オドメーター/i,
+  car: /使用車|車両|車種/,
 };
 const EMPTY = /^[-－−ー―]+$/;
 const num = (v) => {
@@ -61,6 +62,45 @@ export function buildUrl(input, sheetName) {
   if (sheetName) url += `&sheet=${encodeURIComponent(sheetName)}`;
   else if (gid) url += `&gid=${gid}`;
   return url;
+}
+
+// The 点検管理表 keeps one sheet (tab) per year ("2026", "2025", ...). When the URL points at the whole
+// spreadsheet, every year sheet is read and joined oldest -> newest. A year without a sheet makes gviz
+// fall back to the first tab, so a sheet only counts when its dates really are in that year.
+const BOOK_KEY = 'carapp.book.v1';
+export async function fetchBook(url, { full = false } = {}) {
+  if (!/\/gviz\/tq/.test(url) || /[?&](sheet|gid)=/.test(url)) return fetchSheet(url);
+  let cache = null;
+  try { cache = JSON.parse(localStorage.getItem(BOOK_KEY)); } catch { /* none */ }
+  if (cache?.url !== url) cache = null;
+  const thisYear = new Date().getFullYear();
+  const yearSheet = async (y) => {
+    const t = await fetchSheet(`${url}&sheet=${y}`);
+    const ok = t.slice(1).some((r) => (r[0] || '').startsWith(`${y}年`));
+    return ok ? t : null;
+  };
+  const tables = { ...(cache?.tables || {}) };
+  const fresh = cache && !full && Date.now() - cache.at < 24 * 3600e3;
+  if (fresh) {
+    // routine refresh: only this year and last year can still change
+    for (const y of [thisYear + 1, thisYear, thisYear - 1]) {
+      const t = await yearSheet(y).catch(() => undefined);
+      if (t) tables[y] = t; else if (t === null && y === thisYear + 1) delete tables[y];
+    }
+  } else {
+    // discover the year sheets, newest first, six at a time, until a whole batch is empty
+    for (let top = thisYear + 1, found = false; top > thisYear - 60; top -= 6) {
+      const ys = Array.from({ length: 6 }, (_, i) => top - i);
+      const got = await Promise.all(ys.map((y) => yearSheet(y)));
+      got.forEach((t, i) => { if (t) tables[ys[i]] = t; else delete tables[ys[i]]; });
+      if (got.some(Boolean)) found = true; else if (found) break;
+    }
+  }
+  const years = Object.keys(tables).map(Number).sort((a, b) => a - b);
+  if (!years.length) return fetchSheet(url); // not a per-year workbook
+  try { localStorage.setItem(BOOK_KEY, JSON.stringify({ url, at: fresh ? cache.at : Date.now(), tables })); } catch { /* full */ }
+  const header = tables[years[years.length - 1]][0];
+  return [header, ...years.flatMap((y) => tables[y].slice(1))];
 }
 
 export async function fetchSheet(url) {
@@ -162,29 +202,48 @@ export function interpret(table, today = new Date()) {
     // year of the record: from the date column, else from any cell that looks like a date
     const ym = (get('date').match(/(\d{4})\s*[年/.-]/) || all.match(/(20\d{2}|19\d{2})\s*[年/.-]\s*\d{1,2}/) || [])[1];
     rows.push({ idx: rows.length, year: ym ? +ym : null, title, sub, cells, level, reasons, parts, next: get('next'), status: get('status'),
-      fuel: num(get('fuel')), odo: num(get('odo')), cost: num(get('cost')) });
+      fuel: num(get('fuel')), odo: num(get('odo')), cost: num(get('cost')), car: get('car') });
   }
 
   // fuel economy between fill-ups (rows are a chronological log)
   const stats = { fills: 0, avgKmL: null, lastOdo: null, firstOdo: null, totalCost: 0, fuelCost: 0 };
-  let prevOdo = null, dist = 0, litres = 0;
+  // the log spans several cars (and loan cars): economy is worked out per car, the summary is for the current car
+  const isLoan = (car) => /代車/.test(car || '');
+  const current = [...rows].reverse().find((r) => r.car && !isLoan(r.car))?.car || null;
+  stats.car = current;
+  // economy = distance between two fill-ups that both have an odometer reading, divided by all the fuel put in
+  // since the earlier one (fill-ups in between often have no odometer entry)
+  const st = {};
+  let dist = 0, litres = 0;
   for (const row of rows) {
-    if (row.odo) stats.lastOdo = Math.max(stats.lastOdo || 0, row.odo);
-    if (row.odo) stats.firstOdo = Math.min(stats.firstOdo ?? Infinity, row.odo);
-    if (row.cost) stats.totalCost += row.cost;
-    if (!row.fuel || !row.odo) continue;
-    stats.fills++;
-    if (row.cost) stats.fuelCost += row.cost;
-    if (prevOdo != null && row.odo > prevOdo) {
-      const kmL = (row.odo - prevOdo) / row.fuel;
-      row.kmL = kmL;
-      row.leg = row.odo - prevOdo;
-      row.reasons.unshift(`燃費 ${kmL.toFixed(1)} km/L（前回給油から ${(row.odo - prevOdo).toLocaleString()} km）`);
-      dist += row.odo - prevOdo;
-      litres += row.fuel;
+    if (current && row.car && row.car !== current && !isLoan(row.car)) row.sub = [row.sub, row.car].filter(Boolean).join(' ・ ');
+    else if (isLoan(row.car)) row.sub = [row.sub, '代車'].filter(Boolean).join(' ・ ');
+    const mine = !current || row.car === current;
+    if (!mine) row.level = 'none'; // warnings only matter for the car you drive now
+    if (mine && row.odo) {
+      stats.lastOdo = Math.max(stats.lastOdo || 0, row.odo);
+      stats.firstOdo = Math.min(stats.firstOdo ?? Infinity, row.odo);
     }
-    prevOdo = row.odo;
+    if (!row.fuel || isLoan(row.car)) continue;
+    if (mine) { stats.fills++; if (row.cost) stats.fuelCost += row.cost; }
+    const c = (st[row.car || '-'] ||= { odo: null, litres: 0 });
+    c.litres += row.fuel;
+    if (!row.odo) continue;
+    if (c.odo != null && row.odo > c.odo) {
+      const leg = row.odo - c.odo;
+      const kmL = leg / c.litres;
+      if (kmL > 4 && kmL < 60) {
+        row.kmL = kmL;
+        row.leg = leg;
+        row.legFuel = c.litres;
+        row.reasons.unshift(`燃費 ${kmL.toFixed(1)} km/L（前回距離を記録した給油から ${leg.toLocaleString()} km）`);
+        if (mine) { dist += leg; litres += c.litres; }
+      }
+    }
+    c.odo = row.odo;
+    c.litres = 0;
   }
+  for (const row of rows) if (row.cost && (!current || row.car === current)) stats.totalCost += row.cost;
   if (litres > 0) stats.avgKmL = dist / litres;
 
   const byPart = {};
