@@ -3,9 +3,9 @@
 // so the car stays visible from every angle — the room works like a doll's house.
 import * as THREE from 'three';
 
-const W = 8.4; // length along the car (x)
-const D = 6.2; // width (z)
-const H = 3.0; // ceiling height
+const W = 20; // length along the car (x)
+const D = 16; // width (z)
+const H = 5.5; // ceiling height
 
 function canvasTex(w, h, draw, repeat) {
   const cv = document.createElement('canvas');
@@ -125,43 +125,43 @@ export function buildGarage() {
 
   // front wall (ahead of the car's nose, +x): wood slat accent, shelf, wall lamps
   const front = wall(D, at(-1, 0, 0), at(W / 2, 0, 0));
-  const slats = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 2.2), new THREE.MeshStandardMaterial({ map: slatTexture(), roughness: 0.7 }));
-  slats.position.set(W / 2 - 0.02, 1.35, 0);
+  const slats = new THREE.Mesh(new THREE.PlaneGeometry(6, 3.4), new THREE.MeshStandardMaterial({ map: slatTexture(), roughness: 0.7 }));
+  slats.position.set(W / 2 - 0.03, 1.9, 0);
   slats.rotation.y = -Math.PI / 2;
   front.add(slats);
   const shelf = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.04, 1.8), darkMat);
-  shelf.position.set(W / 2 - 0.16, 1.55, -2.1);
+  shelf.position.set(W / 2 - 0.16, 1.55, -4.4);
   front.add(shelf);
-  for (const [z, h, c] of [[-2.7, 0.28, 0x2f6fd6], [-2.35, 0.22, 0xe3e3e3], [-1.95, 0.32, 0x1d1d1f], [-1.55, 0.2, 0xd12a2a]]) {
+  for (const [z, h, c] of [[-5.0, 0.28, 0x2f6fd6], [-4.65, 0.22, 0xe3e3e3], [-4.25, 0.32, 0x1d1d1f], [-3.85, 0.2, 0xd12a2a]]) {
     const can = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, h, 20), new THREE.MeshStandardMaterial({ color: c, roughness: 0.4 }));
     can.position.set(W / 2 - 0.16, 1.57 + h / 2, z);
     front.add(can);
   }
-  for (const z of [-1.9, 1.9]) {
-    const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.5, 0.08), ledMat);
-    lamp.position.set(W / 2 - 0.04, 1.9, z);
+  for (const z of [-3.5, 3.5]) {
+    const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.7, 0.08), ledMat);
+    lamp.position.set(W / 2 - 0.04, 2.2, z);
     front.add(lamp);
   }
 
   // back wall (behind the car, -x): sectional garage door
   const back = wall(D, at(1, 0, 0), at(-W / 2, 0, 0));
-  const door = new THREE.Mesh(new THREE.PlaneGeometry(4.6, 2.5), new THREE.MeshStandardMaterial({ map: doorTexture(), roughness: 0.5, metalness: 0.2 }));
-  door.position.set(-W / 2 + 0.02, 1.25, 0);
+  const door = new THREE.Mesh(new THREE.PlaneGeometry(5.4, 3.0), new THREE.MeshStandardMaterial({ map: doorTexture(), roughness: 0.5, metalness: 0.2 }));
+  door.position.set(-W / 2 + 0.06, 1.5, 0); // in front of the baseboard so they never share a depth
   door.rotation.y = Math.PI / 2;
   back.add(door);
   const frameMat = darkMat;
-  for (const z of [-2.35, 2.35]) {
-    const post = new THREE.Mesh(new THREE.BoxGeometry(0.06, 2.6, 0.1), frameMat);
-    post.position.set(-W / 2 + 0.03, 1.3, z);
+  for (const z of [-2.75, 2.75]) {
+    const post = new THREE.Mesh(new THREE.BoxGeometry(0.1, 3.1, 0.1), frameMat);
+    post.position.set(-W / 2 + 0.05, 1.55, z);
     back.add(post);
   }
-  const head = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.1, 4.8), frameMat);
-  head.position.set(-W / 2 + 0.03, 2.55, 0);
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.12, 5.6), frameMat);
+  head.position.set(-W / 2 + 0.05, 3.06, 0);
   back.add(head);
 
   // left wall (-z): tire rack with the spare set of wheels
   const left = wall(W, at(0, 0, 1), at(0, 0, -D / 2));
-  const rackX = -2.4;
+  const rackX = -4.2;
   for (const dx of [-0.38, 0.38]) {
     const up = new THREE.Mesh(new THREE.BoxGeometry(0.05, 1.9, 0.05), steelMat);
     up.position.set(rackX + dx, 0.95, -D / 2 + 0.42);
@@ -185,8 +185,8 @@ export function buildGarage() {
     }
   }
   // left wall light strip
-  const lstrip = new THREE.Mesh(new THREE.BoxGeometry(3.5, 0.05, 0.05), ledMat);
-  lstrip.position.set(0.8, 2.55, -D / 2 + 0.04);
+  const lstrip = new THREE.Mesh(new THREE.BoxGeometry(10, 0.05, 0.05), ledMat);
+  lstrip.position.set(0, 4.6, -D / 2 + 0.04);
   left.add(lstrip);
 
   // right wall (+z): tool cabinet and pegboard
@@ -216,8 +216,19 @@ export function buildGarage() {
     tool.position.set(x, 1.65, D / 2 - 0.05);
     right.add(tool);
   }
+  const bench = new THREE.Group();
+  const benchTop = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.06, 0.7), new THREE.MeshStandardMaterial({ color: 0x8a6a4a, roughness: 0.5 }));
+  benchTop.position.y = 0.92;
+  bench.add(benchTop);
+  for (const [x, z] of [[-1.1, -0.3], [1.1, -0.3], [-1.1, 0.3], [1.1, 0.3]]) {
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.9, 0.06), darkMat);
+    leg.position.set(x, 0.45, z);
+    bench.add(leg);
+  }
+  bench.position.set(-3.4, 0, D / 2 - 0.4);
+  right.add(bench);
   const rstrip = lstrip.clone();
-  rstrip.position.set(-0.8, 2.55, D / 2 - 0.04);
+  rstrip.position.set(0, 4.6, D / 2 - 0.04);
   right.add(rstrip);
 
   // ---- ceiling with LED panels (hidden when looking from above) ----
@@ -226,18 +237,22 @@ export function buildGarage() {
   ceil.rotation.x = Math.PI / 2;
   ceil.position.y = H;
   ceiling.add(ceil);
-  for (const z of [-1.3, 1.3]) {
-    const led = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.03, 0.18), ledMat);
-    led.position.set(0, H - 0.02, z);
-    ceiling.add(led);
+  for (const x of [-6, 0, 6]) {
+    for (const z of [-4, 0, 4]) {
+      const led = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.03, 0.22), ledMat);
+      led.position.set(x, H - 0.02, z);
+      ceiling.add(led);
+    }
   }
   root.add(ceiling);
   walls.push({ group: ceiling, normal: at(0, -1, 0), point: at(0, H, 0) });
 
   // soft light from the ceiling panels
-  const fill = new THREE.PointLight(0xfff6e8, 3, 12, 1.6);
-  fill.position.set(0, H - 0.3, 0);
-  root.add(fill);
+  for (const x of [-5, 5]) {
+    const fill = new THREE.PointLight(0xfff6e8, 9, 22, 1.4);
+    fill.position.set(x, H - 0.4, 0);
+    root.add(fill);
+  }
 
   const tmp = new THREE.Vector3();
   root.userData.update = (camera) => {

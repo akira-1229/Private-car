@@ -44,9 +44,11 @@ export class CarViewer {
       enableDamping: true,
       dampingFactor: 0.08,
       enablePan: false,
-      minDistance: 4,
-      maxDistance: 22,
-      maxPolarAngle: Math.PI * 0.52,
+      // the camera stays inside the garage (half size 10m x 8m, ceiling 5.5m)
+      minDistance: 3.2,
+      maxDistance: 7.4,
+      minPolarAngle: Math.PI * 0.2,
+      maxPolarAngle: Math.PI * 0.49,
       autoRotate: true,
       autoRotateSpeed: 0.8,
       rotateSpeed: 0.9,
@@ -772,10 +774,13 @@ export class CarViewer {
     this.renderer.domElement.style.width = w + 'px';
     this.renderer.domElement.style.height = h + 'px';
     this.camera.aspect = w / h;
-    // keep the car (~5m long) inside the screen width on portrait phones
-    const dist = Math.min(18, Math.max(8.5, 6.8 / Math.min(this.camera.aspect, 1.4)));
-    this.camera.fov = 40;
+    // the camera has to stay inside the garage, so widen the lens on narrow (portrait) screens
+    // until about 38 degrees of horizontal view fit the car at the start distance
+    const hfov = THREE.MathUtils.degToRad(38);
+    const vfov = 2 * Math.atan(Math.tan(hfov / 2) / this.camera.aspect);
+    this.camera.fov = THREE.MathUtils.clamp(THREE.MathUtils.radToDeg(vfov), 40, 72);
     this.camera.updateProjectionMatrix();
+    const dist = 6.6;
     if (!this._placed) {
       const dir = new THREE.Vector3(1, 0.42, 1.05).normalize();
       this.camera.position.copy(this.controls.target).addScaledVector(dir, dist);
