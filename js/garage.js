@@ -303,7 +303,7 @@ export function buildGarage() {
   for (const [x, z] of [[-0.3, -0.18], [0.3, -0.18], [-0.3, 0.18], [0.3, 0.18]]) cyl(0.04, 0.04, 0.06, M(0x111111, 0.8), x, 0.04, z, chest, 12);
   chest.position.set(3.2, 0, RZ - 0.35);
   right.add(chest);
-  // 62-inch TV above the workbench (16:9 -> 1.373 x 0.772 m) cycling through fuel economy, mileage and tips
+  // 100-inch TV above the workbench (16:9 -> 2.214 x 1.245 m) cycling through fuel economy, mileage and tips
   const tvCv = document.createElement('canvas');
   tvCv.width = 1280; tvCv.height = 720;
   const tvTex = new THREE.CanvasTexture(tvCv);
@@ -398,7 +398,7 @@ export function buildGarage() {
     c.fillStyle = 'rgba(255,255,255,0.12)'; c.fillRect(0, 712, 1280, 8);
     tvTex.needsUpdate = true;
   };
-  const TV_W = 1.373, TV_H = 0.772;
+  const TV_W = 2.214, TV_H = 1.245; // 100-inch 16:9
   const tv = new THREE.Group();
   tv.add(new THREE.Mesh(new THREE.BoxGeometry(TV_W + 0.03, TV_H + 0.03, 0.035), M(0x0b0c0e, 0.25, 0.4)));
   const tvScreen = new THREE.Mesh(new THREE.PlaneGeometry(TV_W, TV_H),
