@@ -247,9 +247,9 @@ export class CarViewer {
       new THREE.BoxGeometry(0.24, 0.07, 0.32),
       new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }),
     );
-    camHit.position.set(0.29, 1.285, 0);
+    camHit.position.set(0.355, 1.243, 0);
     camHit.rotation.z = -0.57; // follow the windshield rake
-    this.#part('dashcam', camHit, [0.3, 1.36, 0]);
+    this.#part('dashcam', camHit, [0.37, 1.32, 0]);
 
     // ---- lights: slim LED headlights wrapping the nose, L-shaped tail lights ----
     const heads = new THREE.Group();
@@ -509,6 +509,8 @@ export class CarViewer {
       hit = this.raycaster.intersectObjects(this.car.children, true).find((h) => h.object.isMesh && h.object.visible);
       id = hit?.object.userData.partId || null;
     }
+    // the engine bay is only shown once the hood has been opened (double tap); a single tap on the closed hood is the body
+    if (id === 'engine' && this.panels?.has('hood') && this.panels.get('hood').target < 0.5 && !hit?.object.isSprite) id = 'body';
     this.select(id);
     this.onSelect(id);
   }
@@ -716,7 +718,7 @@ export class CarViewer {
     if (x < -2.12 && y > 0.76 && y < 1.04 && az > 0.22) return 'taillight';
     if (x > 0.3 && x < 0.8 && y > 0.94 && y < 1.2 && az > 0.8) return 'mirror';
     if (y > 0.97) {
-      if (x > 0.15 && x < 0.45 && y > 1.2 && az < 0.18) return 'dashcam';
+      if (x > 0.22 && x < 0.5 && y > 1.16 && az < 0.18) return 'dashcam';
       if (x > 0.58 && x < 0.9 && y < 1.07 && az < 0.75) return 'windshield';
       if (az > 0.56 && y < 1.37 && x > -1.8 && x < 0.65) return 'side_window';
       if (x > -0.18 && x < 0.8 && az < 0.66) return 'windshield';

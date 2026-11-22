@@ -47,7 +47,12 @@ const viewer = new CarViewer($('#viewer'), {
 });
 if (/[?&]debug\b/.test(location.search)) window.__viewer = viewer;
 viewer.onInteract = () => $('#hint').classList.add('hide');
-viewer.onPanel = (id, open, label) => toast(`${label}を${open ? '開けました' : '閉めました'}`);
+viewer.onPanel = (id, open, label) => {
+  toast(`${label}を${open ? '開けました' : '閉めました'}`);
+  // opening the hood shows the engine bay records; closing it puts them away again
+  if (id === 'hood' && open) { viewer.select('engine'); openPart('engine'); }
+  else if (id === 'hood' && currentView?.id === 'engine') closePanel();
+};
 let toastTimer = 0;
 function toast(msg) {
   const el = $('#toast');
