@@ -530,9 +530,12 @@ export class CarViewer {
     this.hlMeshes = [];
     const part = id && this.parts.get(id);
     if (!part) return;
+    // the body glow also covers the hood and the roof, which are separate tap areas
+    const extra = id === 'body' ? ['engine', 'interior'].flatMap((k) => this.parts.get(k)?.meshes || []) : [];
+    const meshes = [...part.meshes, ...extra];
     // the scan is one cloud of points: glow the matching built-in part (same position) on top of it;
     // on the built-in model, glow the part itself (and overlay parts that have no emissive colour)
-    const overlay = (this.scan ? part.meshes : part.meshes.filter((m) => !m.material.emissive)).filter((m) => !m.userData.noGlow);
+    const overlay = (this.scan ? meshes : meshes.filter((m) => !m.material.emissive)).filter((m) => !m.userData.noGlow);
     if (overlay.length) {
       this.car.updateMatrixWorld(true);
       for (const m of overlay) {
@@ -540,13 +543,13 @@ export class CarViewer {
         o.matrixAutoUpdate = false;
         o.matrix.copy(m.matrixWorld);
         // the scan is a little shorter than the built-in shape (same fit as the black core)
-        if (this.scanKind === 'splat') o.matrix.premultiply(new THREE.Matrix4().makeScale(0.975, 0.97, 0.97).setPosition(0.02, 0, 0));
+        if (this.scanKind === 'splat') o.matrix.premultiply(new THREE.Matrix4().makeScale(0.95, 0.97, 0.97).setPosition(0.045, 0, 0));
         o.renderOrder = 1000;
         this.hlGroup.add(o);
       }
     }
     if (!this.scan) {
-      this.hlMeshes = part.meshes.filter((m) => m.material.emissive);
+      this.hlMeshes = meshes.filter((m) => m.material.emissive);
       for (const m of this.hlMeshes) m.material.emissive.set(0x3d7bff);
     }
   }
@@ -682,8 +685,9 @@ export class CarViewer {
     const mat = new THREE.MeshBasicMaterial({ color: 0x040506 });
     const core = new THREE.Group();
     for (const geo of Object.values(g)) core.add(new THREE.Mesh(geo, mat));
-    core.scale.set(0.95, 0.9, 0.93);
-    core.position.x = 0.03;
+    // shorter at the rear so the scanned plate and tail lights (which sit ~5cm inside the built-in shape) stay visible
+    core.scale.set(0.92, 0.9, 0.93);
+    core.position.x = 0.05;
     return core;
   }
 
