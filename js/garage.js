@@ -231,6 +231,157 @@ export function buildGarage() {
   rstrip.position.set(0, 4.6, D / 2 - 0.04);
   right.add(rstrip);
 
+  // ---- props: things you'd find in a well kept garage ----
+  const M = (color, rough = 0.5, metal = 0) => new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: metal });
+  const box = (w, h, d, mat, x, y, z, parent, ry = 0) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+    m.position.set(x, y, z); m.rotation.y = ry; parent.add(m); return m;
+  };
+  const cyl = (rt, rb, h, mat, x, y, z, parent, seg = 24) => {
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, seg), mat);
+    m.position.set(x, y, z); parent.add(m); return m;
+  };
+  const RZ = D / 2; // right wall z
+
+  // laptop on the workbench (screen shows a little dashboard)
+  const screenTex = canvasTex(512, 320, (c, w, h) => {
+    const g = c.createLinearGradient(0, 0, w, h);
+    g.addColorStop(0, '#0f1a2e'); g.addColorStop(1, '#1d3357');
+    c.fillStyle = g; c.fillRect(0, 0, w, h);
+    c.fillStyle = '#4f8cff'; c.fillRect(24, 24, 180, 14);
+    c.fillStyle = 'rgba(255,255,255,0.7)';
+    for (let i = 0; i < 5; i++) c.fillRect(24, 60 + i * 22, 120 + Math.random() * 60, 8);
+    c.strokeStyle = '#34c77b'; c.lineWidth = 4; c.beginPath();
+    for (let i = 0; i <= 10; i++) c.lineTo(250 + i * 23, 230 - Math.sin(i * 0.8) * 40 - i * 6);
+    c.stroke();
+    c.fillStyle = 'rgba(79,140,255,0.5)';
+    for (let i = 0; i < 6; i++) c.fillRect(250 + i * 38, 270 - (20 + i * 8), 26, 20 + i * 8);
+  });
+  const laptop = new THREE.Group();
+  box(0.36, 0.018, 0.25, M(0x9da3aa, 0.35, 0.8), 0, 0.009, 0, laptop);
+  const lid = new THREE.Group();
+  box(0.36, 0.24, 0.012, M(0x9da3aa, 0.35, 0.8), 0, 0.12, 0, lid);
+  const scr = new THREE.Mesh(new THREE.PlaneGeometry(0.33, 0.21),
+    new THREE.MeshStandardMaterial({ map: screenTex, emissive: 0xffffff, emissiveMap: screenTex, emissiveIntensity: 0.9 }));
+  scr.position.set(0, 0.12, -0.007); scr.rotation.y = Math.PI;
+  lid.add(scr);
+  lid.position.set(0, 0.018, 0.12); lid.rotation.x = 0.32;
+  laptop.add(lid);
+  laptop.position.set(-3.7, 0.95, RZ - 0.45); laptop.rotation.y = 0.15;
+  right.add(laptop);
+  // mug, desk lamp, notebook
+  cyl(0.04, 0.035, 0.1, M(0xf2f2ee, 0.3), -3.2, 1.0, RZ - 0.5, right);
+  box(0.21, 0.015, 0.29, M(0x2f6fd6, 0.6), -2.7, 0.96, RZ - 0.4, right, 0.3);
+  cyl(0.08, 0.09, 0.02, M(0x1d1d1f, 0.4), -4.35, 0.96, RZ - 0.25, right);
+  const arm = box(0.02, 0.45, 0.02, M(0x1d1d1f, 0.4), -4.35, 1.18, RZ - 0.28, right); arm.rotation.x = -0.25;
+  const shade = cyl(0.03, 0.09, 0.12, M(0x1d1d1f, 0.4), -4.35, 1.38, RZ - 0.4, right); shade.rotation.x = 0.9;
+  // two stools at the bench
+  for (const x of [-4.0, -2.8]) {
+    cyl(0.18, 0.18, 0.05, M(0x3a3f46, 0.5), x, 0.68, RZ - 1.05, right);
+    cyl(0.025, 0.025, 0.66, M(0xb8bec6, 0.3, 0.8), x, 0.33, RZ - 1.05, right, 10);
+    cyl(0.2, 0.2, 0.02, M(0xb8bec6, 0.3, 0.8), x, 0.01, RZ - 1.05, right);
+  }
+  // rubber mat under the bench
+  const mat = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 1.6), M(0x24272c, 0.9));
+  mat.rotation.x = -Math.PI / 2; mat.position.set(-3.4, 0.003, RZ - 0.9);
+  right.add(mat);
+  // rolling tool chest (red) next to the cabinet
+  const chest = new THREE.Group();
+  box(0.75, 1.0, 0.48, M(0xb3222a, 0.35, 0.3), 0, 0.58, 0, chest);
+  for (let i = 0; i < 6; i++) box(0.6, 0.015, 0.015, M(0xd0d4d9, 0.3, 0.8), 0, 0.25 + i * 0.13, -0.245, chest);
+  for (const [x, z] of [[-0.3, -0.18], [0.3, -0.18], [-0.3, 0.18], [0.3, 0.18]]) cyl(0.04, 0.04, 0.06, M(0x111111, 0.8), x, 0.04, z, chest, 12);
+  chest.position.set(3.2, 0, RZ - 0.35);
+  right.add(chest);
+  // wall clock
+  const clock = new THREE.Group();
+  cyl(0.22, 0.22, 0.03, M(0xf5f5f2, 0.4), 0, 0, 0, clock, 40).rotation.x = Math.PI / 2;
+  const hand1 = box(0.015, 0.15, 0.005, M(0x111111), 0, 0.06, -0.02, clock); hand1.rotation.z = 0.5;
+  const hand2 = box(0.012, 0.11, 0.005, M(0x111111), 0, 0.04, -0.02, clock); hand2.rotation.z = -1.4;
+  clock.position.set(0.5, 3.1, RZ - 0.03);
+  right.add(clock);
+
+  // left wall: metal shelving with storage boxes, plant, bucket & car care bottles
+  const shelfUnit = new THREE.Group();
+  for (const x of [-0.95, 0.95]) for (const z of [-0.22, 0.22]) box(0.04, 2.0, 0.04, M(0x7c838c, 0.4, 0.8), x, 1.0, z, shelfUnit);
+  const boxColors = [0x2b2f35, 0x3d4a5c, 0xd9d4c7, 0x2b2f35, 0x5c3d2e, 0x3d4a5c];
+  [0.35, 0.95, 1.55].forEach((y, row) => {
+    box(1.95, 0.03, 0.5, M(0x9aa1a8, 0.4, 0.7), 0, y, 0, shelfUnit);
+    for (let i = 0; i < 3; i++) box(0.52, 0.32, 0.4, M(boxColors[(row * 3 + i) % boxColors.length], 0.6), -0.62 + i * 0.62, y + 0.18, 0, shelfUnit);
+  });
+  shelfUnit.position.set(2.6, 0, -RZ + 0.3);
+  left.add(shelfUnit);
+  const pot = cyl(0.22, 0.17, 0.42, M(0x2b2f35, 0.6), 6.2, 0.21, -RZ + 0.5, left);
+  pot.castShadow = false;
+  for (let i = 0; i < 9; i++) {
+    const leaf = new THREE.Mesh(new THREE.SphereGeometry(0.16 + Math.random() * 0.06, 12, 10), M(0x2f6b3a + Math.floor(Math.random() * 3) * 0x020a02, 0.8));
+    leaf.position.set(6.2 + (Math.random() - 0.5) * 0.35, 0.62 + Math.random() * 0.55, -RZ + 0.5 + (Math.random() - 0.5) * 0.35);
+    left.add(leaf);
+  }
+  const bucket = cyl(0.17, 0.14, 0.32, M(0x2f6fd6, 0.5), 0.6, 0.16, -RZ + 0.45, left);
+  bucket.material.side = THREE.DoubleSide;
+  for (const [x, c] of [[0.95, 0x34c77b], [1.1, 0xf2f2ee], [1.25, 0xf5b83d]]) {
+    cyl(0.04, 0.045, 0.24, M(c, 0.4), x, 0.12, -RZ + 0.35, left, 14);
+    cyl(0.012, 0.012, 0.06, M(0x111111, 0.5), x, 0.27, -RZ + 0.35, left, 8);
+  }
+  // framed posters on the left wall
+  const posterTex = (bg, fg, lines) => canvasTex(256, 360, (c, w, h) => {
+    c.fillStyle = bg; c.fillRect(0, 0, w, h);
+    c.fillStyle = fg;
+    c.beginPath(); c.arc(w / 2, h * 0.38, 70, 0, Math.PI * 2); c.fill();
+    c.fillStyle = 'rgba(255,255,255,0.85)';
+    for (let i = 0; i < lines; i++) c.fillRect(40, h * 0.7 + i * 18, w - 80 - i * 30, 7);
+  });
+  for (const [x, bg, fg] of [[-1.2, '#1d2a44', '#4f8cff'], [0.0, '#2b2f35', '#d9a417']]) {
+    box(0.82, 1.12, 0.03, M(0x111111, 0.4), x, 2.6, -RZ + 0.02, left);
+    const pst = new THREE.Mesh(new THREE.PlaneGeometry(0.74, 1.04), new THREE.MeshStandardMaterial({ map: posterTex(bg, fg, 3), roughness: 0.6 }));
+    pst.position.set(x, 2.6, -RZ + 0.04);
+    left.add(pst);
+  }
+
+  // front wall: mini fridge and a wall TV
+  const fridge = new THREE.Group();
+  box(0.6, 0.85, 0.6, M(0xd9dce0, 0.3, 0.4), 0, 0.425, 0, fridge);
+  box(0.02, 0.3, 0.03, M(0x6a7078, 0.3, 0.8), -0.31, 0.55, 0.2, fridge);
+  fridge.position.set(W / 2 - 0.35, 0, 5.6);
+  front.add(fridge);
+  const tvTex = canvasTex(512, 288, (c, w, h) => {
+    const g = c.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, '#0b1220'); g.addColorStop(1, '#22314d');
+    c.fillStyle = g; c.fillRect(0, 0, w, h);
+    c.fillStyle = 'rgba(255,255,255,0.9)'; c.font = 'bold 44px sans-serif'; c.fillText('INSIGHT', 40, 90);
+    c.fillStyle = 'rgba(255,255,255,0.6)'; c.font = '24px sans-serif'; c.fillText('ZE4  ・  55-10', 40, 130);
+    c.strokeStyle = '#4f8cff'; c.lineWidth = 3; c.strokeRect(40, 170, 430, 60);
+  });
+  box(1.5, 0.88, 0.05, M(0x111214, 0.3, 0.3), W / 2 - 0.05, 2.5, 5.0, front, Math.PI / 2);
+  const tv = new THREE.Mesh(new THREE.PlaneGeometry(1.42, 0.8),
+    new THREE.MeshStandardMaterial({ map: tvTex, emissive: 0xffffff, emissiveMap: tvTex, emissiveIntensity: 0.8 }));
+  tv.position.set(W / 2 - 0.085, 2.5, 5.0); tv.rotation.y = -Math.PI / 2;
+  front.add(tv);
+
+  // back wall (shutter side): fire extinguisher, broom, air compressor
+  const ext = new THREE.Group();
+  cyl(0.08, 0.08, 0.5, M(0xd12a2a, 0.35), 0, 0.25, 0, ext);
+  cyl(0.03, 0.03, 0.08, M(0x111111, 0.5), 0, 0.54, 0, ext, 10);
+  ext.position.set(-W / 2 + 0.2, 0, -4.0);
+  back.add(ext);
+  const broom = box(0.03, 1.4, 0.03, M(0x8a6a4a, 0.6), -W / 2 + 0.12, 0.72, -4.6, back); broom.rotation.x = 0.08;
+  box(0.32, 0.08, 0.08, M(0x1d1d1f, 0.8), -W / 2 + 0.14, 0.05, -4.65, back);
+  const comp = new THREE.Group();
+  const tank = cyl(0.2, 0.2, 0.6, M(0x2f6fd6, 0.35, 0.3), 0, 0.28, 0, comp); tank.rotation.z = Math.PI / 2;
+  box(0.25, 0.18, 0.2, M(0x1d1d1f, 0.5), 0, 0.55, 0, comp);
+  comp.position.set(-W / 2 + 0.45, 0, 4.3);
+  back.add(comp);
+
+  // floor (always visible): traffic cones in a corner
+  for (const [x, z] of [[8.6, -6.6], [9.1, -7.2], [8.2, -7.3]]) {
+    const cone = new THREE.Group();
+    box(0.36, 0.03, 0.36, M(0x1d1d1f, 0.8), 0, 0.015, 0, cone);
+    cyl(0.03, 0.15, 0.6, M(0xf07a1a, 0.5), 0, 0.33, 0, cone, 20);
+    cyl(0.085, 0.11, 0.09, M(0xf5f5f2, 0.5), 0, 0.33, 0, cone, 20);
+    cone.position.set(x, 0, z);
+    root.add(cone);
+  }
+
   // ---- ceiling with LED panels (hidden when looking from above) ----
   const ceiling = new THREE.Group();
   const ceil = new THREE.Mesh(new THREE.PlaneGeometry(W, D), new THREE.MeshStandardMaterial({ color: 0xf4f3ef, roughness: 0.95 }));
