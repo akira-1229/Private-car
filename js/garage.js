@@ -2,6 +2,7 @@
 // Walls hide themselves (with everything mounted on them) whenever the camera is on their outside,
 // so the car stays visible from every angle — the room works like a doll's house.
 import * as THREE from 'three';
+import { makeTyreWheel } from './wheel.js';
 
 const W = 20; // length along the car (x)
 const D = 16; // width (z)
@@ -81,8 +82,6 @@ export function buildGarage() {
   const darkMat = new THREE.MeshStandardMaterial({ color: 0x2a2e34, roughness: 0.45, metalness: 0.3 });
   const steelMat = new THREE.MeshStandardMaterial({ color: 0xb8bec6, roughness: 0.3, metalness: 0.8 });
   const ledMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xfdfcf6, emissiveIntensity: 1.6 });
-  const tireMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1c, roughness: 0.9 });
-  const rimMat = new THREE.MeshStandardMaterial({ color: 0x9aa1a8, roughness: 0.35, metalness: 0.9 });
 
   // ---- floor ----
   const floor = new THREE.Mesh(
@@ -161,29 +160,41 @@ export function buildGarage() {
 
   // left wall (-z): tire rack with the spare set of wheels
   const left = wall(W, at(0, 0, 1), at(0, 0, -D / 2));
-  const rackX = -4.2;
-  for (const dx of [-0.38, 0.38]) {
-    const up = new THREE.Mesh(new THREE.BoxGeometry(0.05, 1.9, 0.05), steelMat);
-    up.position.set(rackX + dx, 0.95, -D / 2 + 0.42);
-    left.add(up);
-  }
-  for (const y of [0.55, 1.35]) {
-    for (const zz of [-D / 2 + 0.14, -D / 2 + 0.7]) {
-      const bar = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.04, 0.04), steelMat);
-      bar.position.set(rackX, y - 0.27, zz);
-      left.add(bar);
+  // a proper tyre rack holding the spare (studless) set: 4 x 235/45R18 standing in a row
+  const rackX = -4.4, rackZ = -D / 2 + 0.45;
+  const tyreW = 0.235, gap = 0.03, rowLen = 4 * tyreW + 3 * gap;
+  const rack = new THREE.Group();
+  const rail = (len, x, y, z) => { const m = new THREE.Mesh(new THREE.BoxGeometry(len, 0.035, 0.035), steelMat); m.position.set(x, y, z); rack.add(m); };
+  for (const dx of [-rowLen / 2 - 0.08, rowLen / 2 + 0.08]) {
+    for (const dz of [-0.3, 0.3]) {
+      const up = new THREE.Mesh(new THREE.BoxGeometry(0.04, 1.55, 0.04), steelMat);
+      up.position.set(dx, 0.775, dz);
+      rack.add(up);
     }
-    for (const dx of [-0.2, 0.2]) {
-      const t = new THREE.Mesh(new THREE.TorusGeometry(0.25, 0.08, 14, 32), tireMat);
-      t.scale.z = 1.4;
-      t.position.set(rackX + dx, y, -D / 2 + 0.42);
-      left.add(t);
-      const r = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.19, 0.2, 24), rimMat);
-      r.rotation.x = Math.PI / 2;
-      r.position.copy(t.position);
-      left.add(r);
-    }
+    rail(0.04, dx, 0.12, 0); // feet
   }
+  for (const z of [-0.13, 0.13]) rail(rowLen + 0.2, 0, 0.12, z); // tyres sit between these two rails
+  for (const z of [-0.3, 0.3]) { rail(rowLen + 0.2, 0, 0.12, z); rail(rowLen + 0.2, 0, 1.55, z); }
+  const topShelf = new THREE.Mesh(new THREE.BoxGeometry(rowLen + 0.2, 0.025, 0.62), steelMat);
+  topShelf.position.set(0, 1.0, 0);
+  rack.add(topShelf);
+  // car cover bag and a jerry can on the top shelf
+  const bag = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.28, 0.42), new THREE.MeshStandardMaterial({ color: 0x2b2f35, roughness: 0.85 }));
+  bag.position.set(-0.25, 1.15, 0);
+  rack.add(bag);
+  const can = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.34, 0.3), new THREE.MeshStandardMaterial({ color: 0xc23a2a, roughness: 0.45, metalness: 0.2 }));
+  can.position.set(0.35, 1.18, 0);
+  rack.add(can);
+  for (let i = 0; i < 4; i++) {
+    const tw = makeTyreWheel({ width: tyreW, aspect: 0.45, rimInch: 18 });
+    tw.rotation.z = -Math.PI / 2; // axle along the row
+    if (i < 2) tw.rotation.y = Math.PI; // the outer two show their wheel faces at the ends of the row
+    const r = tw.userData.radius;
+    tw.position.set(-rowLen / 2 + tyreW / 2 + i * (tyreW + gap), 0.12 + Math.sqrt(Math.max(0, r * r - 0.13 * 0.13)) - 0.0, 0);
+    rack.add(tw);
+  }
+  rack.position.set(rackX, 0, rackZ);
+  left.add(rack);
   // left wall light strip
   const lstrip = new THREE.Mesh(new THREE.BoxGeometry(10, 0.05, 0.05), ledMat);
   lstrip.position.set(0, 4.6, -D / 2 + 0.04);
@@ -292,12 +303,53 @@ export function buildGarage() {
   for (const [x, z] of [[-0.3, -0.18], [0.3, -0.18], [-0.3, 0.18], [0.3, 0.18]]) cyl(0.04, 0.04, 0.06, M(0x111111, 0.8), x, 0.04, z, chest, 12);
   chest.position.set(3.2, 0, RZ - 0.35);
   right.add(chest);
-  // wall clock
+  // digital wall clock showing the phone's current time
+  const clockCv = document.createElement('canvas');
+  clockCv.width = 1024; clockCv.height = 384;
+  const clockTex = new THREE.CanvasTexture(clockCv);
+  clockTex.colorSpace = THREE.SRGBColorSpace;
+  const WEEK = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+  let lastSec = -1;
+  const drawClock = () => {
+    const now = new Date();
+    if (now.getSeconds() === lastSec) return;
+    lastSec = now.getSeconds();
+    const c = clockCv.getContext('2d');
+    c.fillStyle = '#05070a';
+    c.fillRect(0, 0, 1024, 384);
+    const hh = String(now.getHours()).padStart(2, '0');
+    const mm = String(now.getMinutes()).padStart(2, '0');
+    const ss = String(now.getSeconds()).padStart(2, '0');
+    c.textBaseline = 'middle';
+    c.shadowColor = 'rgba(90,170,255,0.9)';
+    c.shadowBlur = 24;
+    c.fillStyle = '#bfe0ff';
+    c.font = 'bold 220px "Courier New", ui-monospace, monospace';
+    c.textAlign = 'left';
+    c.fillText(hh, 60, 170);
+    c.fillText(mm, 470, 170);
+    c.globalAlpha = now.getSeconds() % 2 ? 0.25 : 1; // blinking colon
+    c.fillText(':', 345, 160);
+    c.globalAlpha = 1;
+    c.font = 'bold 90px "Courier New", ui-monospace, monospace';
+    c.fillText(ss, 820, 205);
+    c.shadowBlur = 10;
+    c.fillStyle = 'rgba(191,224,255,0.75)';
+    c.font = 'bold 54px "Courier New", ui-monospace, monospace';
+    c.fillText(`${now.getFullYear()}.${String(now.getMonth() + 1).padStart(2, '0')}.${String(now.getDate()).padStart(2, '0')}  ${WEEK[now.getDay()]}`, 64, 330);
+    clockTex.needsUpdate = true;
+  };
+  drawClock();
   const clock = new THREE.Group();
-  cyl(0.22, 0.22, 0.03, M(0xf5f5f2, 0.4), 0, 0, 0, clock, 40).rotation.x = Math.PI / 2;
-  const hand1 = box(0.015, 0.15, 0.005, M(0x111111), 0, 0.06, -0.02, clock); hand1.rotation.z = 0.5;
-  const hand2 = box(0.012, 0.11, 0.005, M(0x111111), 0, 0.04, -0.02, clock); hand2.rotation.z = -1.4;
-  clock.position.set(0.5, 3.1, RZ - 0.03);
+  const clockBody = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.6, 0.05), new THREE.MeshStandardMaterial({ color: 0x0b0d10, roughness: 0.25, metalness: 0.4 }));
+  clock.add(clockBody);
+  const clockFace = new THREE.Mesh(new THREE.PlaneGeometry(1.44, 0.54), new THREE.MeshStandardMaterial({
+    map: clockTex, emissive: 0xffffff, emissiveMap: clockTex, emissiveIntensity: 1.1, roughness: 0.2,
+  }));
+  clockFace.position.z = 0.026;
+  clock.add(clockFace);
+  clock.rotation.y = Math.PI; // face into the room
+  clock.position.set(0.5, 3.3, RZ - 0.03);
   right.add(clock);
 
   // left wall: metal shelving with storage boxes, plant, bucket & car care bottles
@@ -407,6 +459,7 @@ export function buildGarage() {
 
   const tmp = new THREE.Vector3();
   root.userData.update = (camera) => {
+    drawClock();
     for (const w of walls) {
       // visible only while the camera is on the room side of the wall
       w.group.visible = tmp.copy(camera.position).sub(w.point).dot(w.normal) > 0;

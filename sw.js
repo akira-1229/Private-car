@@ -4,7 +4,7 @@
 const CACHE = 'carapp-__BUILD__';
 const SHELL = [
   './', 'index.html', 'style.css', 'manifest.webmanifest',
-  'js/app.js', 'js/car.js', 'js/body.js', 'js/garage.js', 'js/sheet.js', 'js/demo.js',
+  'js/app.js', 'js/car.js', 'js/body.js', 'js/garage.js', 'js/wheel.js', 'js/sheet.js', 'js/demo.js',
   'vendor/three.module.min.js', 'vendor/three.core.min.js', 'vendor/OrbitControls.js', 'vendor/RoomEnvironment.js',
   'vendor/GLTFLoader.js', 'vendor/utils/BufferGeometryUtils.js',
   'icons/icon-180.png', 'icons/icon-192.png',
