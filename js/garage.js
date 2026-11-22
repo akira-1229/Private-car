@@ -303,7 +303,7 @@ export function buildGarage() {
   for (const [x, z] of [[-0.3, -0.18], [0.3, -0.18], [-0.3, 0.18], [0.3, 0.18]]) cyl(0.04, 0.04, 0.06, M(0x111111, 0.8), x, 0.04, z, chest, 12);
   chest.position.set(3.2, 0, RZ - 0.35);
   right.add(chest);
-  // 100-inch TV above the workbench (16:9 -> 2.214 x 1.245 m) cycling through fuel economy, mileage and tips
+  // 150-inch TV above the workbench, at the same height as the clock (16:9 -> 3.321 x 1.868 m) cycling through fuel economy, mileage and tips
   const tvCv = document.createElement('canvas');
   tvCv.width = 1280; tvCv.height = 720;
   const tvTex = new THREE.CanvasTexture(tvCv);
@@ -398,15 +398,15 @@ export function buildGarage() {
     c.fillStyle = 'rgba(255,255,255,0.12)'; c.fillRect(0, 712, 1280, 8);
     tvTex.needsUpdate = true;
   };
-  const TV_W = 2.214, TV_H = 1.245; // 100-inch 16:9
+  const TV_W = 3.321, TV_H = 1.868; // 150-inch 16:9
   const tv = new THREE.Group();
   tv.add(new THREE.Mesh(new THREE.BoxGeometry(TV_W + 0.03, TV_H + 0.03, 0.035), M(0x0b0c0e, 0.25, 0.4)));
   const tvScreen = new THREE.Mesh(new THREE.PlaneGeometry(TV_W, TV_H),
-    new THREE.MeshStandardMaterial({ map: tvTex, emissive: 0xffffff, emissiveMap: tvTex, emissiveIntensity: 0.95, roughness: 0.15 }));
+    new THREE.MeshBasicMaterial({ map: tvTex, toneMapped: false })); // self-lit, no light reflections on the picture
   tvScreen.position.z = 0.018;
   tv.add(tvScreen);
   tv.rotation.y = Math.PI; // face into the room
-  tv.position.set(-3.4, 0.95 + 0.33 + TV_H / 2, RZ - 0.04); // just above the workbench
+  tv.position.set(-3.4, 3.3, RZ - 0.04); // centred at the clock's height, over the workbench
   right.add(tv);
   drawTv();
   root.userData.setTv = (data) => { tvData = data; drawTv(); };
