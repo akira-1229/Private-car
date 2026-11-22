@@ -18,5 +18,107 @@
   -1.209842,
   1.0
  ],
- "note": "scan -> app (front +X, up +Y, right +Z, metres, column-major)"
+ "note": "scan -> app (front +X, up +Y, right +Z, metres, column-major)",
+ "parts": [
+  {
+   "id": "body",
+   "file": "parts/body.spz"
+  },
+  {
+   "id": "door_fr",
+   "file": "parts/door_fr.spz",
+   "label": "\u53f3\u524d\u30c9\u30a2",
+   "hinge": [
+    0.64,
+    0,
+    0.87
+   ],
+   "axis": [
+    0,
+    1,
+    0
+   ],
+   "angle": 62
+  },
+  {
+   "id": "door_rr",
+   "file": "parts/door_rr.spz",
+   "label": "\u53f3\u5f8c\u30c9\u30a2",
+   "hinge": [
+    -0.36,
+    0,
+    0.87
+   ],
+   "axis": [
+    0,
+    1,
+    0
+   ],
+   "angle": 62
+  },
+  {
+   "id": "door_fl",
+   "file": "parts/door_fl.spz",
+   "label": "\u5de6\u524d\u30c9\u30a2",
+   "hinge": [
+    0.64,
+    0,
+    -0.87
+   ],
+   "axis": [
+    0,
+    1,
+    0
+   ],
+   "angle": -62
+  },
+  {
+   "id": "door_rl",
+   "file": "parts/door_rl.spz",
+   "label": "\u5de6\u5f8c\u30c9\u30a2",
+   "hinge": [
+    -0.36,
+    0,
+    -0.87
+   ],
+   "axis": [
+    0,
+    1,
+    0
+   ],
+   "angle": -62
+  },
+  {
+   "id": "hood",
+   "file": "parts/hood.spz",
+   "label": "\u30dc\u30f3\u30cd\u30c3\u30c8",
+   "hinge": [
+    0.8,
+    0.97,
+    0
+   ],
+   "axis": [
+    0,
+    0,
+    1
+   ],
+   "angle": 48
+  },
+  {
+   "id": "trunk",
+   "file": "parts/trunk.spz",
+   "label": "\u30c8\u30e9\u30f3\u30af",
+   "hinge": [
+    -1.9,
+    1.12,
+    0
+   ],
+   "axis": [
+    0,
+    0,
+    1
+   ],
+   "angle": -62
+  }
+ ]
 }

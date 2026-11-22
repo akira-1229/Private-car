@@ -45,7 +45,17 @@ const viewer = new CarViewer($('#viewer'), {
   plate: plateOf(settings),
   onSelect: (id) => (id ? openPart(id) : closePanel()),
 });
+if (/[?&]debug\b/.test(location.search)) window.__viewer = viewer;
 viewer.onInteract = () => $('#hint').classList.add('hide');
+viewer.onPanel = (id, open, label) => toast(`${label}を${open ? '開けました' : '閉めました'}`);
+let toastTimer = 0;
+function toast(msg) {
+  const el = $('#toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 1400);
+}
 
 $('#carName').textContent = settings.carName || DEFAULTS.carName;
 
@@ -87,12 +97,13 @@ async function loadModel() {
         const cfg = await r.json();
         $('#hint').textContent = '実車スキャンを読み込み中…';
         try {
-          await viewer.loadSplat(`models/${cfg.file}`, cfg.matrix);
+          if (cfg.parts) await viewer.loadSplatParts('models/', cfg);
+          else await viewer.loadSplat(`models/${cfg.file}`, cfg.matrix);
           modelLabel = `models/${cfg.file}（実車スキャン）`;
         } catch (e) {
           showError(`実車スキャンを表示できませんでした（${e.message || e}）`);
         } finally {
-          $('#hint').textContent = 'ドラッグで回転 ・ ピンチで拡大 ・ 部位をタップ';
+          $('#hint').textContent = 'ドラッグで回転 ・ タップで記録 ・ ダブルタップでドア開閉';
         }
         return;
       }
@@ -109,7 +120,7 @@ async function loadModel() {
     showError(`3Dモデルを読み込めませんでした（${e.message || e}）。.glb 形式か確認してください。`);
     modelLabel = '';
   } finally {
-    $('#hint').textContent = 'ドラッグで回転 ・ ピンチで拡大 ・ 部位をタップ';
+    $('#hint').textContent = 'ドラッグで回転 ・ タップで記録 ・ ダブルタップでドア開閉';
   }
 }
 const mb = (n) => `${(n / 1048576).toFixed(1)}MB`;

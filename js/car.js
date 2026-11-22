@@ -416,8 +416,58 @@ export class CarViewer {
       const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
       const dt = performance.now() - down.t;
       down = null;
-      if (moved < 10 && dt < 500) this.#pick(e.clientX, e.clientY);
+      if (moved >= 10 || dt >= 500) return;
+      const now = performance.now(), x = e.clientX, y = e.clientY;
+      // double tap opens/closes a door, the hood or the trunk; a single tap shows the part's records
+      if (this.panels && last && now - last.t < 320 && Math.hypot(x - last.x, y - last.y) < 40) {
+        clearTimeout(pending);
+        last = null;
+        if (!this.#toggleAt(x, y)) this.#pick(x, y);
+        return;
+      }
+      last = { t: now, x, y };
+      clearTimeout(pending);
+      if (this.panels) pending = setTimeout(() => this.#pick(x, y), 300);
+      else this.#pick(x, y);
     });
+    let last = null, pending = 0;
+  }
+
+  #rayFrom(cx, cy) {
+    const r = this.renderer.domElement.getBoundingClientRect();
+    const ndc = new THREE.Vector2(((cx - r.left) / r.width) * 2 - 1, -((cy - r.top) / r.height) * 2 + 1);
+    this.raycaster.setFromCamera(ndc, this.camera);
+  }
+
+  // which opening panel a point on the car belongs to (car space, metres)
+  static panelAt(p) {
+    const az = Math.abs(p.z), side = p.z > 0 ? 'r' : 'l';
+    if (p.x > 0.8 && p.y > 0.72 && az < 0.8) return 'hood';
+    if (p.x < -1.88 && p.y > 0.58 && az < 0.7) return 'trunk';
+    if (az > 0.55 && p.y > 0.24 && p.y < 1.42) {
+      const aFront = p.y < 0.95 ? 0.7 : 0.7 - (p.y - 0.95) * 1.6;
+      if (p.x > -0.36 && p.x < aFront) return `door_f${side}`;
+      if (p.x < -0.36 && p.x > -1.2 && Math.hypot(p.x + 1.35, p.y - 0.32) > 0.48) return `door_r${side}`;
+    }
+    return null;
+  }
+
+  #toggleAt(cx, cy) {
+    this.#rayFrom(cx, cy);
+    const hit = this.raycaster.intersectObjects(this.car.children, true)
+      .find((h) => h.object.isMesh && h.object !== this.focus && !h.object.isSprite);
+    const id = hit && CarViewer.panelAt(hit.point);
+    if (!id || !this.panels.has(id)) return false;
+    this.togglePanel(id);
+    return true;
+  }
+
+  togglePanel(id, open) {
+    const p = this.panels?.get(id);
+    if (!p) return;
+    p.target = open ?? (p.target > 0.5 ? 0 : 1);
+    this.controls.autoRotate = false;
+    this.onPanel?.(id, p.target > 0.5, p.label);
   }
 
   #pick(cx, cy) {
@@ -516,6 +566,48 @@ export class CarViewer {
    * Shows a Gaussian-splat scan (.spz etc.) of the real car.
    * `matrix` (column-major 4x4) maps the scan into car space: front +X, up +Y, right +Z, metres, ground y = 0.
    */
+  /** Loads a scan split into a body and opening panels (doors, hood, trunk) that rotate on hinges. */
+  async loadSplatParts(base, cfg) {
+    const { SplatMesh, SparkRenderer } = await import('../vendor/spark.module.min.js');
+    if (!this.spark) {
+      this.spark = new SparkRenderer({ renderer: this.renderer });
+      this.scene.add(this.spark);
+    }
+    const meshes = await Promise.all(cfg.parts.map(async (part) => {
+      const m = new SplatMesh({ url: base + part.file });
+      await m.initialized;
+      return m;
+    }));
+    this.clearModel();
+    const root = new THREE.Group();
+    this.panels = new Map();
+    cfg.parts.forEach((part, i) => {
+      const wrap = new THREE.Group();
+      wrap.matrixAutoUpdate = false;
+      wrap.matrix.fromArray(cfg.matrix);
+      wrap.add(meshes[i]);
+      if (!part.hinge) { root.add(wrap); return; }
+      const pivot = new THREE.Group();
+      pivot.position.fromArray(part.hinge);
+      const inner = new THREE.Group();
+      inner.position.fromArray(part.hinge).negate();
+      inner.add(wrap);
+      pivot.add(inner);
+      root.add(pivot);
+      this.panels.set(part.id, {
+        pivot, label: part.label || part.id, t: 0, target: 0,
+        axis: new THREE.Vector3().fromArray(part.axis).normalize(), angle: THREE.MathUtils.degToRad(part.angle),
+      });
+    });
+    root.add(this.#splatCore());
+    this.scan = root;
+    this.scanKind = 'splat';
+    this.scanScale = new THREE.Vector3(1, 1, 1);
+    this.scene.add(root);
+    for (const o of this.car.children) if (!o.isSprite) o.visible = false;
+    this.select(this.selected);
+  }
+
   async loadSplat(source, matrix) {
     const { SplatMesh, SparkRenderer } = await import('../vendor/spark.module.min.js');
     if (!this.spark) {
@@ -564,6 +656,7 @@ export class CarViewer {
     });
     this.scan = null;
     this.scanKind = null;
+    this.panels = null;
     for (const o of this.car.children) if (!o.isSprite) o.visible = true;
     for (const p of this.parts.values()) if (p.marker && p.anchor) p.marker.position.copy(p.anchor);
     this.focus.visible = false;
@@ -668,6 +761,15 @@ export class CarViewer {
       if (p.marker?.visible) {
         const k = p.marker.userData.level === 'bad' ? 3.2 : 2;
         p.marker.scale.setScalar(0.17 + Math.sin(t * k) * 0.035);
+      }
+    }
+    if (this.panels) {
+      for (const p of this.panels.values()) {
+        if (Math.abs(p.target - p.t) < 0.001) continue;
+        p.t += (p.target - p.t) * 0.09;
+        if (Math.abs(p.target - p.t) < 0.002) p.t = p.target;
+        const e = p.t * p.t * (3 - 2 * p.t);
+        p.pivot.quaternion.setFromAxisAngle(p.axis, p.angle * e);
       }
     }
     if (this.focus.visible) this.focus.scale.setScalar(0.55 + Math.sin(t * 4) * 0.08);

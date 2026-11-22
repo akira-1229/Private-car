@@ -235,3 +235,12 @@ dialog form { max-height: calc(100dvh - 40px); overflow-y: auto; }
 .btn { min-height: 44px; padding: 0 16px; border-radius: 12px; border: 1px solid var(--line); background: var(--card-2); cursor: pointer; font-weight: 600; }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .btn.ghost { background: transparent; }
+
+.toast {
+  position: absolute; z-index: 6; left: 50%; top: calc(var(--safe-t) + 74px);
+  transform: translate(-50%, -8px); opacity: 0; pointer-events: none;
+  padding: 8px 14px; border-radius: 999px; font-size: 13px;
+  background: var(--card); border: 1px solid var(--line);
+  transition: opacity 0.25s, transform 0.25s;
+}
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
