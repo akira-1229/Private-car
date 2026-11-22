@@ -164,16 +164,19 @@ export function interpret(table, today = new Date()) {
   }
 
   // fuel economy between fill-ups (rows are a chronological log)
-  const stats = { fills: 0, avgKmL: null, lastOdo: null, totalCost: 0, fuelCost: 0 };
+  const stats = { fills: 0, avgKmL: null, lastOdo: null, firstOdo: null, totalCost: 0, fuelCost: 0 };
   let prevOdo = null, dist = 0, litres = 0;
   for (const row of rows) {
     if (row.odo) stats.lastOdo = Math.max(stats.lastOdo || 0, row.odo);
+    if (row.odo) stats.firstOdo = Math.min(stats.firstOdo ?? Infinity, row.odo);
     if (row.cost) stats.totalCost += row.cost;
     if (!row.fuel || !row.odo) continue;
     stats.fills++;
     if (row.cost) stats.fuelCost += row.cost;
     if (prevOdo != null && row.odo > prevOdo) {
       const kmL = (row.odo - prevOdo) / row.fuel;
+      row.kmL = kmL;
+      row.leg = row.odo - prevOdo;
       row.reasons.unshift(`燃費 ${kmL.toFixed(1)} km/L（前回給油から ${(row.odo - prevOdo).toLocaleString()} km）`);
       dist += row.odo - prevOdo;
       litres += row.fuel;

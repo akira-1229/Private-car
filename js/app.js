@@ -135,6 +135,18 @@ function apply(table, source) {
   data = interpret(table);
   viewer.setLevels(data.levels);
   renderSummary();
+  // feed the garage TV
+  const fills = data.rows.filter((r) => r.kmL);
+  const date = (r) => (r.sub || '').split(' ・ ')[0].replace(/\s*\(.\)/, '');
+  const byKm = [...fills].sort((a, b) => b.kmL - a.kmL);
+  const last = fills[fills.length - 1];
+  viewer.garage?.userData.setTv?.({
+    ...data.stats,
+    lastKmL: last?.kmL, lastDate: last && date(last),
+    best: byKm[0] && { kmL: byKm[0].kmL, date: date(byKm[0]) },
+    worst: byKm.length && { kmL: byKm[byKm.length - 1].kmL, date: date(byKm[byKm.length - 1]) },
+    perFill: fills.length ? fills.reduce((s, r) => s + r.leg, 0) / fills.length : null,
+  });
   if (currentView) rerenderPanel();
   $('#demoBanner').hidden = source !== 'demo';
 }

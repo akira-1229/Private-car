@@ -303,6 +303,120 @@ export function buildGarage() {
   for (const [x, z] of [[-0.3, -0.18], [0.3, -0.18], [-0.3, 0.18], [0.3, 0.18]]) cyl(0.04, 0.04, 0.06, M(0x111111, 0.8), x, 0.04, z, chest, 12);
   chest.position.set(3.2, 0, RZ - 0.35);
   right.add(chest);
+  // 62-inch TV above the workbench (16:9 -> 1.373 x 0.772 m) cycling through fuel economy, mileage and tips
+  const tvCv = document.createElement('canvas');
+  tvCv.width = 1280; tvCv.height = 720;
+  const tvTex = new THREE.CanvasTexture(tvCv);
+  tvTex.colorSpace = THREE.SRGBColorSpace;
+  tvTex.anisotropy = 8;
+  const TIPS = [
+    ['ふんわりアクセル', '発進は5秒で時速20kmくらいを目安に。モーター走行が長く続きます。'],
+    ['早めのアクセルオフ', '信号が見えたら早めに足を離すと、回生ブレーキで電気を取り戻せます。'],
+    ['減速セレクターを活用', 'ハンドル裏のパドルで回生を強めると、下り坂や減速時に充電が進みます。'],
+    ['タイヤの空気圧を月1回', '空気圧が下がると転がり抵抗が増えます。指定値は運転席ドアのラベルで確認。'],
+    ['ECONモード', 'エアコンと加速を穏やかにして、燃料の使いすぎを抑えます。'],
+    ['不要な荷物は降ろす', '荷物100kgで燃費は約3%悪化すると言われています。'],
+    ['冬はシートヒーター', '暖房のためにエンジンがかかりやすい季節。シートヒーター併用で燃費の低下を抑えられます。'],
+    ['一定の速度で巡航', '車間距離に余裕をもって、加減速の少ない運転を。'],
+  ];
+  let tvData = null, tvSlide = 0, tvTip = 0, tvNext = 0;
+  const rr = (c, x, y, w, h, r) => { c.beginPath(); c.roundRect(x, y, w, h, r); };
+  const drawTv = () => {
+    const c = tvCv.getContext('2d');
+    const g = c.createLinearGradient(0, 0, 1280, 720);
+    g.addColorStop(0, '#0b1220'); g.addColorStop(1, '#1b2a44');
+    c.fillStyle = g; c.fillRect(0, 0, 1280, 720);
+    c.textBaseline = 'alphabetic';
+    const font = (wt, px) => `${wt} ${px}px "Hiragino Sans", "Noto Sans JP", sans-serif`;
+    // header
+    c.fillStyle = '#9aa8bd'; c.font = font(600, 34);
+    c.fillText('INSIGHT  ・  55-10', 64, 84);
+    const titles = ['燃費', '走行距離', '燃費向上のコツ'];
+    c.fillStyle = '#ffffff'; c.font = font(800, 58);
+    c.fillText(titles[tvSlide], 64, 168);
+    // slide dots
+    for (let i = 0; i < 3; i++) {
+      c.fillStyle = i === tvSlide ? '#4f8cff' : 'rgba(255,255,255,0.25)';
+      rr(c, 1080 + i * 44, 60, i === tvSlide ? 34 : 20, 14, 7); c.fill();
+    }
+    const d = tvData || {};
+    if (tvSlide === 0) {
+      c.fillStyle = '#9aa8bd'; c.font = font(600, 36); c.fillText('平均燃費', 64, 260);
+      c.fillStyle = '#ffffff'; c.font = font(800, 190);
+      const avg = d.avgKmL ? d.avgKmL.toFixed(1) : '--';
+      c.fillText(avg, 56, 440);
+      const aw = c.measureText(avg).width;
+      c.font = font(700, 56); c.fillStyle = '#9aa8bd'; c.fillText('km/L', 76 + aw, 440);
+      // right column: latest, best, worst
+      const rows = [
+        ['前回の給油', d.lastKmL, d.lastDate, '#4f8cff'],
+        ['ベスト', d.best?.kmL, d.best?.date, '#34c77b'],
+        ['ワースト', d.worst?.kmL, d.worst?.date, '#f5b83d'],
+      ];
+      rows.forEach(([label, v, date, col], i) => {
+        const y = 250 + i * 130;
+        c.fillStyle = 'rgba(255,255,255,0.06)'; rr(c, 700, y, 516, 108, 18); c.fill();
+        c.fillStyle = col; rr(c, 700, y, 10, 108, 5); c.fill();
+        c.fillStyle = '#9aa8bd'; c.font = font(600, 28); c.fillText(label, 732, y + 42);
+        c.fillStyle = '#ffffff'; c.font = font(800, 52); c.fillText(v ? `${v.toFixed(1)} km/L` : '--', 732, y + 92);
+        c.fillStyle = '#9aa8bd'; c.font = font(500, 26); c.textAlign = 'right'; c.fillText(date || '', 1196, y + 42); c.textAlign = 'left';
+      });
+      c.fillStyle = '#9aa8bd'; c.font = font(500, 30);
+      c.fillText(d.fills ? `給油 ${d.fills} 回の記録から計算` : 'スプレッドシートを読み込むと表示されます', 64, 520);
+    } else if (tvSlide === 1) {
+      c.fillStyle = '#9aa8bd'; c.font = font(600, 36); c.fillText('総走行距離（最新の記録）', 64, 260);
+      c.fillStyle = '#ffffff'; c.font = font(800, 170);
+      const odo = d.lastOdo ? d.lastOdo.toLocaleString() : '--';
+      c.fillText(odo, 56, 430);
+      const ow = c.measureText(odo).width;
+      c.fillStyle = '#9aa8bd'; c.font = font(700, 60); c.fillText('km', 76 + ow, 430);
+      const cards = [
+        ['記録期間に走った距離', d.lastOdo && d.firstOdo ? `${(d.lastOdo - d.firstOdo).toLocaleString()} km` : '--'],
+        ['給油1回あたり', d.perFill ? `${Math.round(d.perFill).toLocaleString()} km` : '--'],
+        ['燃料代（記録分）', d.fuelCost ? `¥${Math.round(d.fuelCost).toLocaleString()}` : '--'],
+      ];
+      cards.forEach(([label, v], i) => {
+        const x = 64 + i * 390;
+        c.fillStyle = 'rgba(255,255,255,0.06)'; rr(c, x, 500, 366, 150, 18); c.fill();
+        c.fillStyle = '#9aa8bd'; c.font = font(600, 28); c.fillText(label, x + 28, 552);
+        c.fillStyle = '#ffffff'; c.font = font(800, 52); c.fillText(v, x + 28, 620);
+      });
+    } else {
+      const [head, body] = TIPS[tvTip % TIPS.length];
+      c.fillStyle = '#34c77b'; c.font = font(700, 36); c.fillText(`TIP ${(tvTip % TIPS.length) + 1} / ${TIPS.length}`, 64, 262);
+      c.fillStyle = '#ffffff'; c.font = font(800, 92); c.fillText(head, 64, 380);
+      // wrap the body text
+      c.fillStyle = '#c8d3e3'; c.font = font(500, 44);
+      let line = '', y = 470;
+      for (const ch of body) {
+        if (c.measureText(line + ch).width > 1120) { c.fillText(line, 64, y); line = ''; y += 64; }
+        line += ch;
+      }
+      c.fillText(line, 64, y);
+    }
+    // progress bar for the current slide
+    c.fillStyle = 'rgba(255,255,255,0.12)'; c.fillRect(0, 712, 1280, 8);
+    tvTex.needsUpdate = true;
+  };
+  const TV_W = 1.373, TV_H = 0.772;
+  const tv = new THREE.Group();
+  tv.add(new THREE.Mesh(new THREE.BoxGeometry(TV_W + 0.03, TV_H + 0.03, 0.035), M(0x0b0c0e, 0.25, 0.4)));
+  const tvScreen = new THREE.Mesh(new THREE.PlaneGeometry(TV_W, TV_H),
+    new THREE.MeshStandardMaterial({ map: tvTex, emissive: 0xffffff, emissiveMap: tvTex, emissiveIntensity: 0.95, roughness: 0.15 }));
+  tvScreen.position.z = 0.018;
+  tv.add(tvScreen);
+  tv.rotation.y = Math.PI; // face into the room
+  tv.position.set(-3.4, 0.95 + 0.33 + TV_H / 2, RZ - 0.04); // just above the workbench
+  right.add(tv);
+  drawTv();
+  root.userData.setTv = (data) => { tvData = data; drawTv(); };
+  const tickTv = (now) => {
+    if (now < tvNext) return;
+    if (tvNext) { if (tvSlide === 2) tvTip++; tvSlide = (tvSlide + 1) % 3; }
+    tvNext = now + (tvSlide === 2 ? 9000 : 7000);
+    drawTv();
+  };
+
   // digital wall clock showing the phone's current time
   const clockCv = document.createElement('canvas');
   clockCv.width = 1024; clockCv.height = 384;
@@ -390,25 +504,12 @@ export function buildGarage() {
     left.add(pst);
   }
 
-  // front wall: mini fridge and a wall TV
+  // front wall: mini fridge
   const fridge = new THREE.Group();
   box(0.6, 0.85, 0.6, M(0xd9dce0, 0.3, 0.4), 0, 0.425, 0, fridge);
   box(0.02, 0.3, 0.03, M(0x6a7078, 0.3, 0.8), -0.31, 0.55, 0.2, fridge);
   fridge.position.set(W / 2 - 0.35, 0, 5.6);
   front.add(fridge);
-  const tvTex = canvasTex(512, 288, (c, w, h) => {
-    const g = c.createLinearGradient(0, 0, 0, h);
-    g.addColorStop(0, '#0b1220'); g.addColorStop(1, '#22314d');
-    c.fillStyle = g; c.fillRect(0, 0, w, h);
-    c.fillStyle = 'rgba(255,255,255,0.9)'; c.font = 'bold 44px sans-serif'; c.fillText('INSIGHT', 40, 90);
-    c.fillStyle = 'rgba(255,255,255,0.6)'; c.font = '24px sans-serif'; c.fillText('ZE4  ・  55-10', 40, 130);
-    c.strokeStyle = '#4f8cff'; c.lineWidth = 3; c.strokeRect(40, 170, 430, 60);
-  });
-  box(1.5, 0.88, 0.05, M(0x111214, 0.3, 0.3), W / 2 - 0.05, 2.5, 5.0, front, Math.PI / 2);
-  const tv = new THREE.Mesh(new THREE.PlaneGeometry(1.42, 0.8),
-    new THREE.MeshStandardMaterial({ map: tvTex, emissive: 0xffffff, emissiveMap: tvTex, emissiveIntensity: 0.8 }));
-  tv.position.set(W / 2 - 0.085, 2.5, 5.0); tv.rotation.y = -Math.PI / 2;
-  front.add(tv);
 
   // back wall (shutter side): fire extinguisher, broom, air compressor
   const ext = new THREE.Group();
@@ -460,6 +561,7 @@ export function buildGarage() {
   const tmp = new THREE.Vector3();
   root.userData.update = (camera) => {
     drawClock();
+    tickTv(performance.now());
     for (const w of walls) {
       // visible only while the camera is on the room side of the wall
       w.group.visible = tmp.copy(camera.position).sub(w.point).dot(w.normal) > 0;
