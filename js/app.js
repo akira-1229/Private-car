@@ -188,6 +188,8 @@ function renderSummary() {
     chips.push(`<button class="chip" data-view="general"><span class="dot ${data.levels.general}"></span>車両全般 <b>${data.byPart.general.length}</b></button>`);
   }
   chips.push(`<button class="chip" data-view="all">すべての項目 <b>${data.rows.length}</b></button>`);
+  // AirTag: Apple offers no API for Find My, so open the 探す app's 持ち物 tab directly
+  chips.push(`<a class="chip" href="findmy://items">📍 車の現在地（探す）</a>`);
   nav.innerHTML = chips.join('');
 }
 $('#summary').addEventListener('click', (e) => {
