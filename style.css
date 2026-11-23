@@ -369,3 +369,16 @@ input.switch:checked::after { transform: translateX(20px); }
 /* text size (設定 → 文字の大きさ) */
 :root[data-font="s"] .panel { zoom: 0.92; }
 :root[data-font="l"] .panel { zoom: 1.12; }
+
+/* ＋ add record */
+.head-btns { display: flex; gap: 8px; }
+.add-btn { background: var(--accent); border-color: transparent; color: #fff; }
+.add-form .row2, .add-form .row3b { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.add-form .row3b[hidden] { display: none; }
+.add-form textarea { display: block; width: 100%; margin-top: 4px; padding: 9px 10px; font: inherit; font-size: 16px; color: var(--fg); background: var(--card-2); border: 1px solid var(--line); border-radius: 10px; resize: vertical; }
+.segs.wrap { flex-wrap: wrap; margin-top: 4px; }
+.segs.wrap .seg { flex: 1 1 auto; }
+.chips-suggest { display: flex; flex-wrap: wrap; gap: 6px; margin: -4px 0 10px; }
+.chip-s { border: 1px solid var(--line); background: var(--card-2); border-radius: 999px; padding: 5px 10px; font-size: 12px; cursor: pointer; }
+.pend { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px; font-size: 11px; background: rgba(245, 184, 61, 0.2); color: #ffd27a; }
+.icon-btn[hidden] { display: none; }

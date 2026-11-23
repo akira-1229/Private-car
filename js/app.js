@@ -11,6 +11,7 @@ const DEFAULTS = {
   sheet: DEFAULT_SHEET, sheetName: '', interval: 5, carName: 'インサイト', bodyColor: '#080c0b',
   plateRegion: '岐阜 303', plateKana: 'の', plateNumber: '55-10', modelUrl: '', modelFlip: false,
   // appearance (設定タブ)
+  gasUrl: '', gasToken: '',
   brightness: 1, accent: '#4f8cff', panelStyle: 'glass', fontSize: 'm', autoRotate: true, rotateSpeed: 0.8, garage: true,
 };
 
@@ -137,8 +138,11 @@ async function loadModel() {
 const mb = (n) => `${(n / 1048576).toFixed(1)}MB`;
 
 // ---------- data ----------
+let lastTable = null;
 function apply(table, source) {
-  data = interpret(table);
+  lastTable = table;
+  data = interpret(mergePending(table));
+  for (const r of data.rows) if (pendingKeys.size && pendingKeys.has(rowKey(data.headers, data.headers.map((h) => cellOf(r, h))))) r.pending = true;
   viewer.setLevels(data.levels);
   // feed the garage TV
   const fills = data.rows.filter((r) => r.kmL && (!data.stats.car || r.car === data.stats.car));
@@ -172,6 +176,7 @@ async function refresh({ manual = false } = {}) {
     apply(table, 'sheet');
     lastSync = new Date();
     store.set(CACHE_KEY, { url, table, at: lastSync.toISOString() });
+    setTimeout(sendPending, 500);
     $('#errorBanner').hidden = true;
   } catch (e) {
     const cache = store.get(CACHE_KEY, null);
@@ -248,7 +253,7 @@ function itemHTML(row, { showParts = false } = {}) {
     : '';
   return `<article class="item">
     <div class="item-head"><span class="item-title">${esc(row.title)}</span><span class="badge ${row.level}">${row.level === 'none' && row.cost != null ? `¥${row.cost.toLocaleString()}` : LEVEL_LABEL[row.level]}</span></div>
-    ${row.sub ? `<p class="item-sub">${esc(row.sub)}</p>` : ''}
+    ${row.sub || row.pending ? `<p class="item-sub">${esc(row.sub || '')}${row.pending ? ' <span class="pend">スプレッドシート送信待ち</span>' : ''}</p>` : ''}
     ${row.reasons.length ? `<p class="reason">${esc(row.reasons.join(' ・ '))}</p>` : ''}
     <dl class="kv">${kv}</dl>${parts}
   </article>`;
@@ -338,7 +343,7 @@ function openList(type) {
 function rerenderPanel() {
   if (currentView.type === 'part') openPart(currentView.id, currentView);
   else if (currentView.type === 'vehicle') openVehicle({ keepScroll: true });
-  else if (currentView.type === 'settings') return; // a form: don't rebuild under the user's fingers
+  else if (currentView.type === 'settings' || currentView.type === 'add') return; // forms: don't rebuild under the user's fingers
   else openList(currentView.type);
 }
 
@@ -352,6 +357,7 @@ $('#panelBody').addEventListener('click', (e) => {
 });
 
 function showPanel({ keepScroll = false } = {}) {
+  $('#btnAdd').hidden = !(currentView && (currentView.type === 'part' || ['all', 'general', 'attention'].includes(currentView.type)));
   $('#panel').classList.add('open');
   $('#panel').setAttribute('aria-hidden', 'false');
   if (!keepScroll) $('#panelBody').scrollTop = 0;
@@ -518,6 +524,15 @@ function openSettings() {
       </div>
       <p class="note">最終更新：${esc(t)}</p>
     </section>
+    <section class="card"><h3>スプレッドシートへの書き込み</h3>
+      <label class="field">Apps Script ウェブアプリの URL<input type="url" id="setGasUrl" value="${esc(s.gasUrl)}" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off"></label>
+      <label class="field">合言葉（Apps Script の TOKEN と同じもの）<input id="setGasToken" value="${esc(s.gasToken)}" autocomplete="off"></label>
+      <div class="row-btns"><button class="btn primary" data-action="saveGas">保存</button><button class="btn" data-action="copyGas">スクリプトをコピー</button></div>
+      <p class="note">＋ボタンで追加した記録をスプレッドシートにも書き込むための設定です。<br>
+      ① 点検管理表で「拡張機能 → Apps Script」を開く ② コピーしたスクリプトを貼り付け、TOKEN を合言葉に変えて保存
+      ③「デプロイ → 新しいデプロイ → ウェブアプリ」（実行ユーザー：自分／アクセス：全員）④ 出てきた URL と合言葉をここに入れて保存
+      ${pending().length ? `<br>送信待ち：${pending().filter((p) => !p.sent).length}件` : ''}</p>
+    </section>
     <section class="card"><h3>3Dモデル</h3>
       <p class="note">${esc(modelLabel ? `表示中: ${modelLabel}` : '標準モデルを表示中')}</p>
       <label class="btn file">.glb ファイルを選ぶ<input type="file" id="setModelFile" accept=".glb,model/gltf-binary,application/octet-stream" hidden></label>
@@ -589,12 +604,25 @@ $('#panelBody').addEventListener('click', async (e) => {
     return;
   }
   const act = e.target.closest('[data-action]')?.dataset.action;
+  if (act === 'cancelAdd') { const back = currentView?.back; if (back?.type === 'part') openPart(back.id, back); else openList(back?.type || 'all'); return; }
   if (act === 'refresh') { await refresh({ manual: true }); openSettings(); }
   if (act === 'saveSheet') {
     settings.sheet = $('#setSheet').value.trim() || DEFAULT_SHEET;
     settings.sheetName = $('#setSheetName').value.trim();
     saveSettings(); data = null; $('#errorBanner').hidden = true;
     await refresh({ manual: true }); openSettings();
+  }
+  if (act === 'saveGas') {
+    settings.gasUrl = $('#setGasUrl').value.trim();
+    settings.gasToken = $('#setGasToken').value.trim();
+    saveSettings(); toast('保存しました'); sendPending();
+  }
+  if (act === 'copyGas') {
+    try {
+      const code = await (await fetch('gas/Code.gs', { cache: 'no-cache' })).text();
+      await navigator.clipboard.writeText(code);
+      toast('スクリプトをコピーしました');
+    } catch { window.open('gas/Code.gs', '_blank'); }
   }
   if (act === 'clearModel') {
     await idb.del('model'); settings.modelUrl = ''; saveSettings(); modelLabel = '';
@@ -620,6 +648,188 @@ $('#panelBody').addEventListener('click', async (e) => {
 $('#docClose').addEventListener('click', () => { $('#docViewer').hidden = true; });
 $('#btnOpenSettings2').addEventListener('click', () => openSettings());
 applyPrefs();
+
+// ---------- ＋ 記録を追加 (form → app + spreadsheet) ----------
+// The new row is shown in the app at once (kept as "pending" on this device) and sent to the
+// Apps Script web app (gas/Code.gs), which inserts it into that year's sheet. Once a later refresh
+// brings the row back from the sheet, the pending copy is dropped.
+const PENDING_KEY = 'carapp.pending.v1';
+const CATS = ['給油', '点検・整備', '洗車・清掃', 'タイヤ交換・その他'];
+const WD = ['日', '月', '火', '水', '木', '金', '土'];
+const digits = (v) => String(v ?? '').replace(/[^0-9.]/g, '');
+const rowKey = (header, r) => {
+  const g = (h) => r[header.indexOf(h)] ?? '';
+  const dm = String(g('日時')).match(/(\d{4})\D+(\d{1,2})\D+(\d{1,2})/);
+  return [dm ? `${+dm[1]}-${+dm[2]}-${+dm[3]}` : g('日時'), g('カテゴリ'), digits(g('料金')), digits(g('距離')), digits(g('給油量'))].join('|');
+};
+function pending() { return store.get(PENDING_KEY, []); }
+function mergePending(table) {
+  if (!table?.length) return table;
+  const header = table[0];
+  const have = new Set(table.slice(1).map((r) => rowKey(header, r)));
+  const list = pending();
+  const left = list.filter((p) => !have.has(p.key)); // rows the sheet now has are confirmed
+  if (left.length !== list.length) store.set(PENDING_KEY, left);
+  pendingKeys = new Set(left.map((p) => p.key));
+  return left.length ? [header, ...table.slice(1), ...left.map((p) => header.map((h) => p.cells[h] ?? ''))] : table;
+}
+let pendingKeys = new Set();
+
+function defaultCategory(id) {
+  if (id === 'fuel') return '給油';
+  if (id === 'body') return '洗車・清掃';
+  if (id?.startsWith('tire_')) return 'タイヤ交換・その他';
+  return '点検・整備';
+}
+function suggest(field, filter = () => true) {
+  const count = new Map();
+  for (const r of data?.rows || []) {
+    if (!filter(r)) continue;
+    const v = r.cells.find((c) => c.label === field)?.value;
+    if (v && !/^[-－]$/.test(v)) count.set(v, (count.get(v) || 0) + 1 + r.idx / 1e4); // frequent and recent first
+  }
+  return [...count.entries()].sort((a, b) => b[1] - a[1]).map(([v]) => v).slice(0, 30);
+}
+const cellOf = (r, f) => r?.cells.find((c) => c.label === f)?.value || '';
+
+function openAddForm() {
+  const back = currentView;
+  const cat = defaultCategory(back?.id);
+  currentView = { type: 'add', id: 'add', back };
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const st = data?.stats || {};
+  const last = (c) => [...(data?.rows || [])].reverse().find((r) => cellOf(r, 'カテゴリ') === c && (!st.car || r.car === st.car));
+  const lf = last(cat);
+  const dl = (id, list) => `<datalist id="${id}">${list.map((v) => `<option value="${esc(v)}">`).join('')}</datalist>`;
+  $('#panelTitle').textContent = '記録を追加';
+  $('#panelSub').textContent = 'アプリとスプレッドシートに追加します';
+  $('#btnAdd').hidden = true;
+  $('#panelBody').innerHTML = `
+    <form id="addForm" class="card add-form" autocomplete="off">
+      <div class="row2">
+        <label class="field">日付<input type="date" name="date" required value="${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}"></label>
+        <label class="field">時間<input type="time" name="time" value="${pad(now.getHours())}:${pad(now.getMinutes())}"></label>
+      </div>
+      <div class="field">カテゴリ<div class="segs wrap">${CATS.map((c) => `<button type="button" class="seg ${c === cat ? 'on' : ''}" data-cat="${c}">${c}</button>`).join('')}</div></div>
+      <input type="hidden" name="カテゴリ" value="${cat}">
+      <label class="field">会社名<input name="会社名" list="dlCompany" value="${esc(cellOf(lf, '会社名'))}" placeholder="例：出光"></label>
+      <label class="field">店舗名<input name="店舗名" list="dlShop" value="${esc(cellOf(lf, '店舗名'))}" placeholder="例：セルフうずら"></label>
+      <div class="fuel-only row3b">
+        <label class="field">単価（円/L）<input type="number" inputmode="decimal" step="0.1" name="単価" value="${esc(digits(cellOf(last('給油'), '単価')))}"></label>
+        <label class="field">給油量（L）<input type="number" inputmode="decimal" step="0.01" name="給油量" placeholder="20.00"></label>
+      </div>
+      <label class="field">料金（円）<input type="number" inputmode="numeric" name="料金" placeholder="${cat === '給油' ? '単価×給油量で自動入力' : '例：3800'}"></label>
+      <label class="field">距離（km・メーターの数字）<input type="number" inputmode="numeric" name="距離" placeholder="${st.lastOdo ? `前回 ${st.lastOdo.toLocaleString()}` : '例：47500'}"></label>
+      <label class="field">担当者<input name="担当者" list="dlStaff" placeholder="-"></label>
+      <label class="field">使用車<input name="使用車" list="dlCar" value="${esc(st.car || '')}"></label>
+      <label class="field">特記事項<textarea name="特記事項" rows="3" list="dlNote" placeholder="-"></textarea></label>
+      <div class="chips-suggest" id="noteSuggest"></div>
+      ${dl('dlCompany', suggest('会社名', (r) => cellOf(r, 'カテゴリ') === cat))}
+      <datalist id="dlShop"></datalist>
+      ${dl('dlStaff', suggest('担当者'))}
+      ${dl('dlCar', suggest('使用車'))}
+      <div class="row-btns">
+        <button type="button" class="btn ghost" data-action="cancelAdd">キャンセル</button>
+        <button type="submit" class="btn primary">追加する</button>
+      </div>
+      ${settings.gasUrl ? '' : '<p class="note">⚠ スプレッドシートへの書き込み先が未設定です（設定 → スプレッドシートへの書き込み）。アプリには追加され、設定後に送信されます。</p>'}
+    </form>`;
+  const f = $('#addForm');
+  const sync = () => {
+    const c = f.elements['カテゴリ'].value;
+    f.querySelectorAll('.fuel-only').forEach((el) => { el.hidden = c !== '給油'; });
+    const company = f.elements['会社名'].value;
+    $('#dlShop').innerHTML = suggest('店舗名', (r) => !company || cellOf(r, '会社名') === company).map((v) => `<option value="${esc(v)}">`).join('');
+    $('#noteSuggest').innerHTML = suggest('特記事項', (r) => cellOf(r, 'カテゴリ') === c).slice(0, 6)
+      .map((v) => `<button type="button" class="chip-s" data-note="${esc(v)}">${esc(v.length > 18 ? `${v.slice(0, 18)}…` : v)}</button>`).join('');
+  };
+  sync();
+  f.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-cat]');
+    if (b) {
+      f.elements['カテゴリ'].value = b.dataset.cat;
+      f.querySelectorAll('[data-cat]').forEach((x) => x.classList.toggle('on', x === b));
+      // the shop you used last time for this category, unless you already typed one
+      const lc = last(b.dataset.cat);
+      if (!touched.has('会社名')) f.elements['会社名'].value = cellOf(lc, '会社名');
+      if (!touched.has('店舗名')) f.elements['店舗名'].value = cellOf(lc, '店舗名');
+      $('#dlCompany').innerHTML = suggest('会社名', (r) => cellOf(r, 'カテゴリ') === b.dataset.cat).map((v) => `<option value="${esc(v)}">`).join('');
+      sync();
+    }
+    const n = e.target.closest('[data-note]');
+    if (n) f.elements['特記事項'].value = n.dataset.note;
+  });
+  const touched = new Set();
+  f.addEventListener('input', (e) => {
+    touched.add(e.target.name);
+    if (e.target.name === '会社名') sync();
+    if (e.target.name === '単価' || e.target.name === '給油量') {
+      const p = +f.elements['単価'].value, l = +f.elements['給油量'].value;
+      if (p && l) f.elements['料金'].value = Math.round(p * l);
+    }
+  });
+  f.addEventListener('submit', (e) => { e.preventDefault(); submitRecord(f); });
+  showPanel();
+}
+
+async function submitRecord(f) {
+  const v = (n) => (f.elements[n]?.value ?? '').trim();
+  const cat = v('カテゴリ');
+  const [y, m, d] = v('date').split('-').map(Number);
+  const wd = WD[new Date(y, m - 1, d).getDay()];
+  const [hh, mm] = (v('time') || '00:00').split(':');
+  const num = (n) => (v(n) === '' ? '' : Number(v(n)));
+  const fuel = cat === '給油';
+  // values for the sheet (numbers stay numbers so the sheet's formats apply)
+  const fields = {
+    カテゴリ: cat, 会社名: v('会社名') || '-', 店舗名: v('店舗名') || '-', 時間: `${+hh} : ${mm}`, 担当者: v('担当者') || '-',
+    料金: num('料金'), 単価: fuel ? num('単価') : '', 給油量: fuel ? num('給油量') : '', 距離: num('距離'),
+    使用車: v('使用車'), 特記事項: v('特記事項') || '-',
+  };
+  // the same row as the app reads it back from the sheet
+  const cells = {
+    日時: `${y}年${m}月${d}日  (${wd})`, ...fields,
+    料金: fields.料金 === '' ? '' : `¥${fields.料金.toLocaleString()}`,
+    単価: fields.単価 === '' ? '' : fields.単価.toFixed(1),
+    給油量: fields.給油量 === '' ? '' : fields.給油量.toFixed(2),
+    距離: fields.距離 === '' ? '' : `${fields.距離.toLocaleString()}km`,
+  };
+  const header = lastTable?.[0] || Object.keys(cells);
+  const item = { key: rowKey(header, header.map((h) => cells[h] ?? '')), cells, payload: { date: v('date'), fields }, sent: false, at: Date.now() };
+  store.set(PENDING_KEY, [...pending(), item]);
+  apply(lastTable || [header], 'sheet');
+  // back to the list the form was opened from, on the year of the new record
+  viewYear = y;
+  const back = currentView?.back;
+  if (back?.type === 'part') openPart(back.id, back); else openList(back?.type || 'all');
+  toast('追加しました');
+  sendPending();
+}
+
+let sending = false;
+async function sendPending() {
+  if (sending || !settings.gasUrl) return;
+  const list = pending().filter((p) => !p.sent);
+  if (!list.length) return;
+  sending = true;
+  let ok = 0;
+  try {
+    for (const p of list) {
+      const res = await fetch(settings.gasUrl, { method: 'POST', body: JSON.stringify({ token: settings.gasToken, ...p.payload }) });
+      const j = await res.json().catch(() => ({}));
+      if (!j.ok) throw new Error(j.error || `HTTP ${res.status}`);
+      store.set(PENDING_KEY, pending().map((x) => (x.key === p.key ? { ...x, sent: true } : x)));
+      ok++;
+    }
+  } catch (e) {
+    showError(`スプレッドシートに書き込めませんでした（${e.message || e}）。アプリには残してあり、あとで自動で再送します。`);
+  } finally {
+    sending = false;
+  }
+  if (ok) { toast(`スプレッドシートに ${ok}件 追加しました`); refresh({ manual: true }); }
+}
+$('#btnAdd').addEventListener('click', openAddForm);
 
 // ---------- update notice ----------
 // index.html carries the build number stamped at deploy time; version.json always has the latest one.
