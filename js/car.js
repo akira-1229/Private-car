@@ -550,8 +550,7 @@ export class CarViewer {
     for (const p of this.panels.values()) {
       p.t = p.target = 0;
       p.pivot.quaternion.identity();
-      p.pivot.visible = true;
-      if (p.openWrap) p.openWrap.visible = false;
+      if (p.innerWrap) p.innerWrap.visible = false;
     }
   }
 
@@ -654,7 +653,7 @@ export class CarViewer {
       const jobs = [];
       for (const part of cfg.parts) {
         const panel = this.panels.get(part.id);
-        if (panel && part.open) jobs.push(load(part.open).then((m) => { panel.openWrap = openWrap(m); }).catch(() => {}));
+        if (panel && part.inner) jobs.push(load(part.inner).then((m) => { panel.innerWrap = openWrap(m); }).catch((e) => console.warn('inner', part.id, e)));
       }
       for (const bay of cfg.open.bays || []) {
         jobs.push(load(bay.file).then((m) => { this.bays.push({ wrap: openWrap(m), when: bay.when }); }).catch(() => {}));
@@ -698,7 +697,35 @@ export class CarViewer {
   // the semi-transparent splats of the dark paint and glass.
   #splatCore() {
     const g = buildBody();
-    const mat = new THREE.MeshBasicMaterial({ color: 0x040506 });
+    // Opening a door / the hood / the trunk cuts a hole in the filler exactly there, so the cabin, engine bay
+    // and boot are visible while the rest of the car stays solid (no see-through body). Double-sided: through
+    // a hole you look at the dark inside of the far side instead of the background.
+    const HOLES = {
+      door_fr: [[-0.36, 0.22, 0.12], [0.78, 1.18, 1.4]],
+      door_rr: [[-1.25, 0.22, 0.12], [-0.34, 1.18, 1.4]],
+      door_fl: [[-0.36, 0.22, -1.4], [0.78, 1.18, -0.12]],
+      door_rl: [[-1.25, 0.22, -1.4], [-0.34, 1.18, -0.12]],
+      hood: [[0.72, 0.62, -0.95], [2.5, 1.7, 0.95]],
+      trunk: [[-2.6, 0.55, -0.85], [-1.72, 1.7, 0.85]],
+    };
+    const ids = Object.keys(HOLES);
+    this.coreHoles = Object.fromEntries(ids.map((id) => [id, { value: 0 }]));
+    const mat = new THREE.MeshBasicMaterial({ color: 0x040506, side: THREE.DoubleSide });
+    mat.onBeforeCompile = (sh) => {
+      ids.forEach((id, i) => {
+        sh.uniforms[`hMin${i}`] = { value: new THREE.Vector3(...HOLES[id][0]) };
+        sh.uniforms[`hMax${i}`] = { value: new THREE.Vector3(...HOLES[id][1]) };
+        sh.uniforms[`hOn${i}`] = this.coreHoles[id];
+      });
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', '#include <common>\nvarying vec3 vCarPos;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvCarPos = (modelMatrix * vec4(position, 1.0)).xyz;');
+      const decl = ids.map((_, i) => `uniform vec3 hMin${i}; uniform vec3 hMax${i}; uniform float hOn${i};`).join('\n');
+      const test = ids.map((_, i) => `if (hOn${i} > 0.5 && all(greaterThan(vCarPos, hMin${i})) && all(lessThan(vCarPos, hMax${i}))) discard;`).join('\n');
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', `#include <common>\nvarying vec3 vCarPos;\n${decl}`)
+        .replace('void main() {', `void main() {\n${test}`);
+    };
     const core = new THREE.Group();
     for (const geo of Object.values(g)) core.add(new THREE.Mesh(geo, mat));
     // shorter at the rear so the scanned plate and tail lights (which sit ~5cm inside the built-in shape) stay visible
@@ -856,13 +883,13 @@ export class CarViewer {
     if (this.panels) {
       let anyOpen = false;
       for (const p of this.panels.values()) {
-        // fully open: show the scanned open panel instead of the swung closed skin
-        const showOpen = !!p.openWrap && p.target > 0.5 && p.t > 0.97;
-        if (p.openWrap) { p.openWrap.visible = showOpen; p.pivot.visible = !showOpen; }
+        // the outside is always the swung closed skin; once fully open, the scanned inside (door trim, hood underside) appears
+        if (p.innerWrap) p.innerWrap.visible = p.target > 0.5 && p.t > 0.97;
         if (p.t > 0.02) anyOpen = true;
+        const hole = this.coreHoles?.[p.id];
+        if (hole) hole.value = p.t > 0.02 ? 1 : 0;
       }
       for (const b of this.bays || []) b.wrap.visible = b.when.some((id) => (this.panels.get(id)?.t || 0) > 0.05);
-      if (this.core) this.core.visible = !anyOpen; // the black filler would hide the cabin
       for (const p of this.panels.values()) {
         if (Math.abs(p.target - p.t) < 0.001) continue;
         p.t += (p.target - p.t) * 0.09;

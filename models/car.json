@@ -22,8 +22,7 @@
  "parts": [
   {
    "id": "body",
-   "file": "parts/body.spz",
-   "open": null
+   "file": "parts/body.spz"
   },
   {
    "id": "door_fr",
@@ -40,7 +39,7 @@
     0
    ],
    "angle": 82,
-   "open": "open/door_fr_open.spz"
+   "inner": "open/door_fr_inner.spz"
   },
   {
    "id": "door_rr",
@@ -57,7 +56,7 @@
     0
    ],
    "angle": 62,
-   "open": "open/door_rr_open.spz"
+   "inner": "open/door_rr_inner.spz"
   },
   {
    "id": "door_fl",
@@ -74,7 +73,7 @@
     0
    ],
    "angle": -78,
-   "open": "open/door_fl_open.spz"
+   "inner": "open/door_fl_inner.spz"
   },
   {
    "id": "door_rl",
@@ -91,7 +90,7 @@
     0
    ],
    "angle": -64,
-   "open": "open/door_rl_open.spz"
+   "inner": "open/door_rl_inner.spz"
   },
   {
    "id": "hood",
@@ -108,7 +107,7 @@
     1
    ],
    "angle": 38,
-   "open": "open/hood_open.spz"
+   "inner": "open/hood_inner.spz"
   },
   {
    "id": "trunk",
@@ -125,7 +124,7 @@
     1
    ],
    "angle": -105,
-   "open": "open/trunk_open.spz"
+   "inner": "open/trunk_inner.spz"
   }
  ],
  "open": {
