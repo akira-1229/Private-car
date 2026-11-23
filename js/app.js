@@ -12,6 +12,7 @@ const DEFAULTS = {
   plateRegion: '岐阜 303', plateKana: 'の', plateNumber: '55-10', modelUrl: '', modelFlip: false,
   // appearance (設定タブ)
   gasUrl: '', gasToken: '',
+  carModel: 'scan',
   brightness: 1, accent: '#4f8cff', panelStyle: 'glass', fontSize: 'm', autoRotate: true, rotateSpeed: 0.8, garage: true,
 };
 
@@ -97,6 +98,7 @@ const idb = {
 
 let modelLabel = '';
 async function loadModel() {
+  if (settings.carModel === 'smooth') { viewer.clearModel(); modelLabel = 'なめらかモデル'; return; }
   let src = null;
   const saved = await idb.get('model');
   if (saved?.blob) { src = await saved.blob.arrayBuffer(); modelLabel = `${saved.name}（${mb(saved.blob.size)}・この端末に保存）`; }
@@ -500,6 +502,7 @@ function openSettings() {
       <div class="row">文字の大きさ<div class="segs">${opt('fontSize', [['s', '小'], ['m', '標準'], ['l', '大']])}</div></div>
     </section>
     <section class="card"><h3>3D</h3>
+      <div class="row">車の表示<div class="segs">${opt('carModel', [['scan', '実車スキャン'], ['smooth', 'なめらか']])}</div></div>
       <label class="row">自動で回転 <input type="checkbox" class="switch" data-pref="autoRotate" ${s.autoRotate ? 'checked' : ''}></label>
       <label class="row">回転の速さ <output>${s.rotateSpeed}</output>
         <input type="range" min="0.2" max="3" step="0.1" value="${s.rotateSpeed}" data-pref="rotateSpeed"></label>
@@ -600,6 +603,7 @@ $('#panelBody').addEventListener('click', async (e) => {
     settings[k] = k === 'interval' ? +seg.dataset.value : seg.dataset.value;
     saveSettings(); applyPrefs();
     if (k === 'interval') schedule();
+    if (k === 'carModel') loadModel();
     seg.parentElement.querySelectorAll('[data-pref]').forEach((b) => b.classList.toggle('on', b === seg));
     return;
   }
