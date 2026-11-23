@@ -770,6 +770,16 @@ export class CarViewer {
     }
   }
 
+  /** Appearance settings from the 設定 tab. */
+  setPrefs({ brightness = 1, autoRotate = true, rotateSpeed = 0.8, garage = true } = {}) {
+    // a CSS filter brightens the splat scan and the meshes alike
+    this.renderer.domElement.style.filter = Math.abs(brightness - 1) > 0.01 ? `brightness(${brightness})` : '';
+    this.controls.autoRotateSpeed = rotateSpeed;
+    if (this.prefAutoRotate !== autoRotate) this.controls.autoRotate = autoRotate && !this.selected;
+    this.prefAutoRotate = autoRotate;
+    if (this.garage) this.garage.visible = garage;
+  }
+
   // Shift the rendered image up so the car stays visible above the bottom sheet.
   setBottomInset(px) { this._insetTarget = px; }
 

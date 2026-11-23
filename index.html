@@ -20,22 +20,19 @@
 <body>
   <div id="app">
     <header class="topbar">
-      <div class="title">
+      <button class="title-card" id="titleCard" aria-label="タップで今すぐ更新">
         <h1 id="carName">インサイト</h1>
         <p id="syncStatus" class="sub">読み込み中…</p>
-      </div>
-      <div class="actions">
-        <button id="btnRefresh" class="icon-btn" aria-label="今すぐ更新">
-          <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 7.75 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
-        </button>
-        <button id="btnSettings" class="icon-btn" aria-label="設定">
-          <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M19.14 12.94a7.07 7.07 0 0 0 0-1.88l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.61-.22l-2.39.96a7.03 7.03 0 0 0-1.63-.94l-.36-2.54A.5.5 0 0 0 13.9 2h-3.84a.5.5 0 0 0-.49.42l-.36 2.54c-.59.24-1.13.56-1.63.94l-2.39-.96a.5.5 0 0 0-.61.22L2.66 8.48a.5.5 0 0 0 .12.64l2.03 1.58a7.07 7.07 0 0 0 0 1.88l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32c.13.22.39.3.61.22l2.39-.96c.5.38 1.04.7 1.63.94l.36 2.54c.04.24.25.42.49.42h3.84c.24 0 .45-.18.49-.42l.36-2.54c.59-.24 1.13-.56 1.63-.94l2.39.96c.22.08.48 0 .61-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z"/></svg>
-        </button>
-      </div>
+      </button>
+      <a class="locate-btn" id="btnLocate" href="findmy://items" aria-label="車の現在地（探すアプリ）">
+        <span class="locate-pulse"></span>
+        <svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M21 3 3 10.53v.98l6.84 2.65L12.48 21h.98L21 3z"/></svg>
+        <span class="locate-label">現在地</span>
+      </a>
     </header>
 
     <div id="demoBanner" class="banner" hidden>
-      デモデータを表示中です。<button id="btnOpenSettings2" class="link">設定</button>からスプレッドシートを連携してください。
+      デモデータを表示中です。<button id="btnOpenSettings2" class="link">設定</button>タブからスプレッドシートを連携してください。
     </div>
     <div id="errorBanner" class="banner error" hidden></div>
     <button id="updateBanner" class="update-banner" hidden>✨ 新しいバージョンがあります　<b>タップで更新</b></button>
@@ -44,7 +41,6 @@
     <p class="hint" id="hint">ドラッグで回転 ・ タップで記録 ・ ダブルタップでドア開閉</p>
     <div id="toast" class="toast" role="status"></div>
 
-    <nav class="summary" id="summary"></nav>
 
     <section id="panel" class="panel" aria-hidden="true">
       <div class="grabber"></div>
@@ -59,64 +55,30 @@
       </div>
       <div id="panelBody" class="panel-body"></div>
     </section>
+    <nav class="tabbar" id="tabbar">
+      <button class="tab" data-tab="vehicle">
+        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M18.92 6.01A1.5 1.5 0 0 0 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm11 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zM5 11l1.5-4.5h11L19 11H5z"/></svg>
+        <span>車両情報</span>
+      </button>
+      <button class="tab" data-tab="maint">
+        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M22.7 19l-9.1-9.1c.9-2.3.4-5-1.5-6.9-2-2-5-2.4-7.4-1.3L9 6 6 9 1.6 4.7C.4 7.1.9 10.1 2.9 12.1c1.9 1.9 4.6 2.4 6.9 1.5l9.1 9.1c.4.4 1 .4 1.4 0l2.3-2.3c.5-.4.5-1.1.1-1.4z"/></svg>
+        <span>点検整備</span>
+      </button>
+      <button class="tab" data-tab="wash">
+        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2.7S6 9.5 6 13.5a6 6 0 0 0 12 0C18 9.5 12 2.7 12 2.7zm0 16.8a4 4 0 0 1-4-4c0-.5.1-1 .3-1.5.4 1.9 2 3.3 3.9 3.5h.3a.75.75 0 0 1 0 1.5c-.2.3-.3.5-.5.5zM19.5 2l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7zM4.5 3l.5 1.2 1.2.5-1.2.5-.5 1.2-.5-1.2-1.2-.5 1.2-.5z"/></svg>
+        <span>洗車清掃</span>
+      </button>
+      <button class="tab" data-tab="settings">
+        <svg viewBox="0 0 24 24"><path fill="currentColor" d="M19.14 12.94a7.07 7.07 0 0 0 0-1.88l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.61-.22l-2.39.96a7.03 7.03 0 0 0-1.63-.94l-.36-2.54A.5.5 0 0 0 13.9 2h-3.84a.5.5 0 0 0-.49.42l-.36 2.54c-.59.24-1.13.56-1.63.94l-2.39-.96a.5.5 0 0 0-.61.22L2.66 8.48a.5.5 0 0 0 .12.64l2.03 1.58a7.07 7.07 0 0 0 0 1.88l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32c.13.22.39.3.61.22l2.39-.96c.5.38 1.04.7 1.63.94l.36 2.54c.04.24.25.42.49.42h3.84c.24 0 .45-.18.49-.42l.36-2.54c.59-.24 1.13-.56 1.63-.94l2.39.96c.22.08.48 0 .61-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z"/></svg>
+        <span>設定</span>
+      </button>
+    </nav>
+    <div id="docViewer" class="doc-viewer" hidden>
+      <button class="icon-btn doc-close" id="docClose" aria-label="閉じる">✕</button>
+      <img id="docImg" alt="">
+    </div>
   </div>
 
-  <dialog id="settings">
-    <form method="dialog" id="settingsForm">
-      <h2>設定</h2>
-      <label>スプレッドシートの URL
-        <input type="url" name="sheet" placeholder="https://docs.google.com/spreadsheets/d/…" autocomplete="off">
-        <small>共有設定を「リンクを知っている全員（閲覧者）」にしたシートのURL、「ウェブに公開」したCSVのURL、またはApps ScriptのウェブアプリURLが使えます。</small>
-      </label>
-      <label>シート名（タブ名・任意）
-        <input type="text" name="sheetName" placeholder="例: 点検管理表">
-      </label>
-      <label>自動更新の間隔
-        <select name="interval">
-          <option value="1">1分</option>
-          <option value="5">5分</option>
-          <option value="15">15分</option>
-          <option value="30">30分</option>
-          <option value="60">60分</option>
-        </select>
-      </label>
-      <div class="row2">
-        <label>車の名前
-          <input type="text" name="carName" placeholder="インサイト">
-        </label>
-        <label>ボディカラー
-          <input type="color" name="bodyColor">
-        </label>
-      </div>
-      <div class="row3">
-        <label>ナンバー（地名・分類番号）
-          <input type="text" name="plateRegion" placeholder="岐阜 303">
-        </label>
-        <label>ひらがな
-          <input type="text" name="plateKana" placeholder="—" maxlength="1">
-        </label>
-        <label>番号
-          <input type="text" name="plateNumber" placeholder="55-10">
-        </label>
-      </div>
-      <fieldset class="model-box">
-        <legend>実車の3Dモデル（スキャン）</legend>
-        <p id="modelInfo" class="model-info">未設定（標準モデルを表示中）</p>
-        <label class="file-btn">.glb ファイルを選ぶ
-          <input type="file" name="modelFile" accept=".glb,model/gltf-binary,application/octet-stream">
-        </label>
-        <label class="check"><input type="checkbox" name="modelFlip"> 前後を反転する（車が後ろ向きに表示されるとき）</label>
-        <label>またはモデルの URL（任意）
-          <input type="url" name="modelUrl" placeholder="https://…/car.glb" autocomplete="off">
-        </label>
-        <button type="button" class="btn ghost small" id="btnClearModel">スキャンモデルを外して標準モデルに戻す</button>
-      </fieldset>
-      <div class="dialog-actions">
-        <button value="cancel" class="btn ghost">キャンセル</button>
-        <button value="save" class="btn primary" id="btnSave">保存して読み込み</button>
-      </div>
-    </form>
-  </dialog>
 
   <script type="module" src="js/app.js"></script>
 </body>

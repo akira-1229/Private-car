@@ -3,10 +3,16 @@ import { PARTS, GENERAL, buildUrl, fetchSheet, fetchBook, interpret, parseCSV, r
 import { DEMO_CSV } from './demo.js';
 
 const $ = (s) => document.querySelector(s);
+const BUILD = document.querySelector('meta[name="app-build"]')?.content || '';
 const SETTINGS_KEY = 'carapp.settings.v1';
 const CACHE_KEY = 'carapp.cache.v1';
 const DEFAULT_SHEET = 'https://docs.google.com/spreadsheets/d/1-BuCzgFYa1fTVGN5v-L4rzbnQeDGJk0MMLSlXrWCPR0/edit';
-const DEFAULTS = { sheet: DEFAULT_SHEET, sheetName: '', interval: 5, carName: 'インサイト', bodyColor: '#080c0b', plateRegion: '岐阜 303', plateKana: 'の', plateNumber: '55-10', modelUrl: '', modelFlip: false };
+const DEFAULTS = {
+  sheet: DEFAULT_SHEET, sheetName: '', interval: 5, carName: 'インサイト', bodyColor: '#080c0b',
+  plateRegion: '岐阜 303', plateKana: 'の', plateNumber: '55-10', modelUrl: '', modelFlip: false,
+  // appearance (設定タブ)
+  brightness: 1, accent: '#4f8cff', panelStyle: 'glass', fontSize: 'm', autoRotate: true, rotateSpeed: 0.8, garage: true,
+};
 
 // ---------- storage (wrapped: private mode can throw) ----------
 const store = {
@@ -134,7 +140,6 @@ const mb = (n) => `${(n / 1048576).toFixed(1)}MB`;
 function apply(table, source) {
   data = interpret(table);
   viewer.setLevels(data.levels);
-  renderSummary();
   // feed the garage TV
   const fills = data.rows.filter((r) => r.kmL && (!data.stats.car || r.car === data.stats.car));
   const date = (r) => (r.sub || '').split(' ・ ')[0].replace(/\s*\(.\)/, '');
@@ -161,7 +166,7 @@ async function refresh({ manual = false } = {}) {
     return;
   }
   loading = true;
-  $('#btnRefresh').classList.add('spinning');
+  $('#titleCard').classList.add('loading');
   try {
     const table = await fetchBook(url, { full: manual });
     apply(table, 'sheet');
@@ -178,7 +183,7 @@ async function refresh({ manual = false } = {}) {
     if (!data) apply(parseCSV(DEMO_CSV), 'demo');
   } finally {
     loading = false;
-    $('#btnRefresh').classList.remove('spinning');
+    $('#titleCard').classList.remove('loading');
     setStatus();
   }
 }
@@ -190,9 +195,9 @@ function showError(msg) {
 }
 
 function setStatus() {
-  const n = data ? data.rows.length : 0;
-  const t = lastSync ? lastSync.toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
-  $('#syncStatus').textContent = `${n}件 ・ ${t} 更新（${settings.interval}分毎）`;
+  $('#syncStatus').textContent = lastSync
+    ? lastSync.toLocaleString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+    : '—';
 }
 
 function schedule() {
@@ -206,36 +211,26 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && (!lastSync || Date.now() - lastSync > 60000)) refresh();
 });
 
-// ---------- summary chips ----------
-function renderSummary() {
-  const nav = $('#summary');
-  const bad = data.rows.filter((r) => r.level === 'bad').length;
-  const warn = data.rows.filter((r) => r.level === 'warn').length;
-  const chips = [];
-  if (bad || warn) {
-    chips.push(`<button class="chip" data-view="attention"><span class="dot ${bad ? 'bad' : 'warn'}"></span>要確認 <b>${bad + warn}</b>件</button>`);
-  } else if (data.rows.some((r) => r.level === 'ok')) {
-    chips.push(`<button class="chip" data-view="attention"><span class="dot ok"></span>すべて良好</button>`);
-  }
-  if (data.byPart.general.length) {
-    chips.push(`<button class="chip" data-view="general"><span class="dot ${data.levels.general}"></span>車両全般 <b>${data.byPart.general.length}</b></button>`);
-  }
-  const st = data.stats || {};
-  if (st.avgKmL) chips.push(`<button class="chip" data-part="fuel">⛽ 平均燃費 <b>${st.avgKmL.toFixed(1)}</b> km/L</button>`);
-  if (st.lastOdo) chips.push(`<button class="chip" data-view="all">🛣️ <b>${st.lastOdo.toLocaleString()}</b> km</button>`);
-  chips.push(`<button class="chip" data-view="all">すべての記録 <b>${data.rows.length}</b></button>`);
-  // AirTag: Apple offers no API for Find My, so open the 探す app's 持ち物 tab directly
-  chips.push(`<a class="chip" href="findmy://items">📍 車の現在地（探す）</a>`);
-  nav.innerHTML = chips.join('');
+// ---------- tab bar ----------
+const TABS = {
+  vehicle: () => openVehicle(),
+  maint: () => { viewer.select('engine'); openPart('engine', { title: '点検整備', tab: 'maint' }); },
+  wash: () => { viewer.select('body'); openPart('body', { title: '洗車清掃', tab: 'wash' }); },
+  settings: () => openSettings(),
+};
+let activeTab = null;
+function setActiveTab(t) {
+  activeTab = t;
+  document.querySelectorAll('.tab').forEach((b) => b.classList.toggle('on', b.dataset.tab === t));
 }
-$('#summary').addEventListener('click', (e) => {
-  const p = e.target.closest('[data-part]');
-  if (p) { viewer.select(p.dataset.part); openPart(p.dataset.part); return; }
-  const b = e.target.closest('[data-view]');
+$('#tabbar').addEventListener('click', (e) => {
+  const b = e.target.closest('.tab');
   if (!b) return;
+  if (activeTab === b.dataset.tab && $('#panel').classList.contains('open')) { closePanel(); return; }
   viewer.select(null);
-  openList(b.dataset.view);
+  TABS[b.dataset.tab]();
 });
+$('#titleCard').addEventListener('click', () => refresh({ manual: true }));
 
 // ---------- panel ----------
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -304,11 +299,12 @@ function currentRows() {
   return data.rows;
 }
 
-function openPart(id) {
-  currentView = { type: 'part', id };
+function openPart(id, { title, tab } = {}) {
+  currentView = { type: 'part', id, title, tab };
+  setActiveTab(tab || null);
   const rows = data?.byPart[id] || [];
   const lv = data?.levels[id] || 'none';
-  $('#panelTitle').textContent = PARTS[id]?.label || id;
+  $('#panelTitle').textContent = title || PARTS[id]?.label || id;
   $('#panelSub').innerHTML = rows.length
     ? `<span class="dot ${lv}"></span> ${LEVEL_LABEL[lv]} ・ 全${rows.length}件の記録`
     : '点検管理表に該当する記録がありません';
@@ -320,6 +316,7 @@ function openPart(id) {
 
 function openList(type) {
   currentView = { type, id: type };
+  setActiveTab(null);
   let rows, title;
   if (type === 'general') { rows = data.byPart.general; title = GENERAL.label; }
   else if (type === 'attention') { rows = data.rows.filter((r) => r.level === 'bad' || r.level === 'warn'); title = '要確認の項目'; }
@@ -333,7 +330,9 @@ function openList(type) {
 }
 
 function rerenderPanel() {
-  if (currentView.type === 'part') openPart(currentView.id);
+  if (currentView.type === 'part') openPart(currentView.id, currentView);
+  else if (currentView.type === 'vehicle') openVehicle({ keepScroll: true });
+  else if (currentView.type === 'settings') return; // a form: don't rebuild under the user's fingers
   else openList(currentView.type);
 }
 
@@ -346,14 +345,15 @@ $('#panelBody').addEventListener('click', (e) => {
   openPart(b.dataset.part);
 });
 
-function showPanel() {
+function showPanel({ keepScroll = false } = {}) {
   $('#panel').classList.add('open');
   $('#panel').setAttribute('aria-hidden', 'false');
-  $('#panelBody').scrollTop = 0;
+  if (!keepScroll) $('#panelBody').scrollTop = 0;
   requestAnimationFrame(() => viewer.setBottomInset($('#panel').offsetHeight));
 }
 function closePanel() {
   currentView = null;
+  setActiveTab(null);
   viewer.select(null);
   $('#panel').classList.remove('open');
   $('#panel').setAttribute('aria-hidden', 'true');
@@ -385,61 +385,236 @@ $('#btnClosePanel').addEventListener('click', closePanel);
   });
 })();
 
-// ---------- settings ----------
-const dlg = $('#settings');
-const form = $('#settingsForm');
-function openSettings() {
-  for (const [k, v] of Object.entries(settings)) {
-    const el = form.elements[k];
-    if (!el || el.type === 'file') continue;
-    if (el.type === 'checkbox') el.checked = !!v; else el.value = v;
-  }
-  form.elements.modelFile.value = '';
-  $('#modelInfo').textContent = modelLabel ? `表示中: ${modelLabel}` : '未設定（標準モデルを表示中）';
-  dlg.showModal();
+// ---------- 車両情報 tab: details, due dates and documents (車検証・自賠責 …) ----------
+const VEHICLE_KEY = 'carapp.vehicle.v1';
+const VEHICLE_DEFAULT = { model: 'ZE4', grade: 'EX・BLACK STYLE', color: 'クリスタルブラック・パール', shaken: '', jibai: '', nini: '' };
+const DOCS = [
+  ['shaken', '車検証'],
+  ['jibai', '自賠責保険証明書'],
+  ['nini', '任意保険証券'],
+  ['recycle', 'リサイクル券'],
+  ['other', 'その他の書類'],
+];
+const DUES = [['shaken', '車検満了日'], ['jibai', '自賠責保険 満了日'], ['nini', '任意保険 満了日']];
+let docUrls = [];
+let docCache = null; // { slotId: [files] } — shown immediately, refreshed from IndexedDB in the background
+function vehicle() { return { ...VEHICLE_DEFAULT, ...store.get(VEHICLE_KEY, {}) }; }
+function daysLeft(iso) {
+  if (!iso) return null;
+  const d = new Date(`${iso}T00:00:00`);
+  const t = new Date(); t.setHours(0, 0, 0, 0);
+  return Math.round((d - t) / 86400000);
 }
-$('#btnSettings').addEventListener('click', openSettings);
-$('#btnOpenSettings2').addEventListener('click', openSettings);
-dlg.addEventListener('close', () => {
-  if (dlg.returnValue !== 'save') return;
-  const fd = new FormData(form);
-  const file = form.elements.modelFile.files[0];
-  fd.delete('modelFile');
-  const prevModel = `${settings.modelUrl}|${settings.modelFlip}`;
-  settings = { ...settings, ...Object.fromEntries(fd.entries()) };
-  settings.modelFlip = form.elements.modelFlip.checked;
-  settings.interval = +settings.interval || 5;
-  store.set(SETTINGS_KEY, settings);
+function openVehicle({ keepScroll = false } = {}) {
+  currentView = { type: 'vehicle', id: 'vehicle' };
+  setActiveTab('vehicle');
+  const v = vehicle();
+  const st = data?.stats || {};
+  const year = new Date().getFullYear();
+  const yearCost = (data?.rows || []).filter((r) => r.year === year && (!st.car || r.car === st.car)).reduce((s, r) => s + (r.cost || 0), 0);
+  $('#panelTitle').textContent = '車両情報';
+  $('#panelSub').textContent = `${settings.carName} ・ ${settings.plateRegion} ${settings.plateKana} ${settings.plateNumber}`;
+  docUrls.forEach((u) => URL.revokeObjectURL(u));
+  docUrls = [];
+  const docs = DOCS.map(([id]) => docCache?.[id] || []);
+  const due = DUES.map(([k, label]) => {
+    const n = daysLeft(v[k]);
+    const cls = n == null ? '' : n < 0 ? 'bad' : n <= 60 ? 'warn' : 'ok';
+    const txt = n == null ? '未設定' : n < 0 ? `${-n}日 過ぎています` : `あと ${n}日`;
+    return `<label class="due"><span>${label}</span><input type="date" data-vehicle="${k}" value="${esc(v[k])}"><b class="badge ${cls}">${txt}</b></label>`;
+  }).join('');
+  const docHTML = DOCS.map(([id, label], i) => {
+    const files = docs[i].map((f, j) => {
+      const url = URL.createObjectURL(f.blob);
+      docUrls.push(url);
+      const thumb = f.type?.startsWith('image/') ? `<img src="${url}" alt="">` : '<span class="pdf">PDF</span>';
+      return `<div class="doc-file"><button class="doc-thumb" data-open="${id}:${j}">${thumb}</button>
+        <small>${esc(f.name)}</small><button class="doc-del" data-del="${id}:${j}" aria-label="削除">✕</button></div>`;
+    }).join('');
+    return `<div class="doc-slot"><div class="doc-head"><b>${label}</b>
+        <label class="doc-add">＋ 追加<input type="file" accept="image/*,application/pdf" data-add="${id}" multiple hidden></label></div>
+        <div class="doc-files">${files || `<p class="doc-empty">${docCache ? '写真またはPDFを追加できます' : '読み込み中…'}</p>`}</div></div>`;
+  }).join('');
+  $('#panelBody').innerHTML = `
+    <section class="card">
+      <h3>車両</h3>
+      <dl class="kv">
+        <dt>車名</dt><dd>${esc(settings.carName)}</dd>
+        <dt>型式</dt><dd><input class="inline" data-vehicle="model" value="${esc(v.model)}"></dd>
+        <dt>グレード</dt><dd><input class="inline" data-vehicle="grade" value="${esc(v.grade)}"></dd>
+        <dt>ボディ色</dt><dd><input class="inline" data-vehicle="color" value="${esc(v.color)}"></dd>
+        <dt>ナンバー</dt><dd>${esc(`${settings.plateRegion} ${settings.plateKana} ${settings.plateNumber}`)}</dd>
+      </dl>
+    </section>
+    <section class="card stats">
+      <div><small>平均燃費</small><b>${st.avgKmL ? st.avgKmL.toFixed(1) : '--'}</b><span>km/L</span></div>
+      <div><small>走行距離</small><b>${st.lastOdo ? st.lastOdo.toLocaleString() : '--'}</b><span>km</span></div>
+      <div><small>${year}年の費用</small><b>${yearCost ? `¥${Math.round(yearCost).toLocaleString()}` : '--'}</b><span>記録分</span></div>
+    </section>
+    <section class="card"><h3>期限</h3>${due}</section>
+    <section class="card"><h3>書類</h3>${docHTML}
+      <p class="note">書類はこの iPhone の中にだけ保存されます（他の端末やスプレッドシートには送られません）。</p></section>`;
+  showPanel({ keepScroll });
+  if (!docCache) loadDocs().then(() => { if (currentView?.type === 'vehicle') openVehicle({ keepScroll: true }); });
+}
+async function loadDocs() {
+  const lists = await Promise.all(DOCS.map(async ([id]) => (await idb.get(`doc:${id}`)) || []));
+  docCache = Object.fromEntries(DOCS.map(([id], i) => [id, lists[i]]));
+}
+async function saveDocs(id, list) {
+  docCache = { ...(docCache || {}), [id]: list };
+  openVehicle({ keepScroll: true });
+  await idb.set(`doc:${id}`, list).catch((err) => showError(`保存できませんでした: ${err.message || err}`));
+}
+
+// ---------- 設定 tab ----------
+const ACCENTS = [['#4f8cff', 'ブルー'], ['#34c77b', 'グリーン'], ['#f5a524', 'オレンジ'], ['#a970ff', 'パープル'], ['#ff5a6a', 'レッド'], ['#c9ced6', 'シルバー']];
+function openSettings() {
+  currentView = { type: 'settings', id: 'settings' };
+  setActiveTab('settings');
+  const s = settings;
+  const opt = (name, list) => list.map(([v, l]) => `<button class="seg ${String(s[name]) === String(v) ? 'on' : ''}" data-pref="${name}" data-value="${v}">${l}</button>`).join('');
+  const t = lastSync ? lastSync.toLocaleString('ja-JP') : '—';
+  $('#panelTitle').textContent = '設定';
+  $('#panelSub').textContent = `バージョン ${BUILD.startsWith('__') ? '開発版' : BUILD}`;
+  $('#panelBody').innerHTML = `
+    <section class="card"><h3>表示</h3>
+      <label class="row">画面の明るさ <output>${Math.round(s.brightness * 100)}%</output>
+        <input type="range" min="0.5" max="1.6" step="0.05" value="${s.brightness}" data-pref="brightness"></label>
+      <div class="row">テーマカラー<div class="swatches">${ACCENTS.map(([c, l]) => `<button class="swatch ${s.accent === c ? 'on' : ''}" style="--c:${c}" data-pref="accent" data-value="${c}" aria-label="${l}"></button>`).join('')}</div></div>
+      <div class="row">パネルのスタイル<div class="segs">${opt('panelStyle', [['glass', 'ガラス'], ['solid', 'ソリッド'], ['light', 'ライト']])}</div></div>
+      <div class="row">文字の大きさ<div class="segs">${opt('fontSize', [['s', '小'], ['m', '標準'], ['l', '大']])}</div></div>
+    </section>
+    <section class="card"><h3>3D</h3>
+      <label class="row">自動で回転 <input type="checkbox" class="switch" data-pref="autoRotate" ${s.autoRotate ? 'checked' : ''}></label>
+      <label class="row">回転の速さ <output>${s.rotateSpeed}</output>
+        <input type="range" min="0.2" max="3" step="0.1" value="${s.rotateSpeed}" data-pref="rotateSpeed"></label>
+      <label class="row">ガレージを表示 <input type="checkbox" class="switch" data-pref="garage" ${s.garage ? 'checked' : ''}></label>
+    </section>
+    <section class="card"><h3>車</h3>
+      <label class="field">車の名前<input data-pref="carName" value="${esc(s.carName)}"></label>
+      <div class="row3">
+        <label class="field">ナンバー（地名・分類番号）<input data-pref="plateRegion" value="${esc(s.plateRegion)}"></label>
+        <label class="field">ひらがな<input data-pref="plateKana" maxlength="1" value="${esc(s.plateKana)}"></label>
+        <label class="field">番号<input data-pref="plateNumber" value="${esc(s.plateNumber)}"></label>
+      </div>
+      <label class="row">ボディカラー（標準モデル） <input type="color" data-pref="bodyColor" value="${esc(s.bodyColor)}"></label>
+    </section>
+    <section class="card"><h3>データ</h3>
+      <label class="field">スプレッドシートの URL<input type="url" id="setSheet" value="${esc(s.sheet)}" autocomplete="off"></label>
+      <label class="field">シート名（空欄なら年ごとのシートを全部読み込み）<input id="setSheetName" value="${esc(s.sheetName)}"></label>
+      <div class="row">自動更新<div class="segs">${opt('interval', [[1, '1分'], [5, '5分'], [15, '15分'], [60, '60分']])}</div></div>
+      <div class="row-btns">
+        <button class="btn primary" data-action="saveSheet">保存して読み込み</button>
+        <button class="btn" data-action="refresh">今すぐ更新</button>
+      </div>
+      <p class="note">最終更新：${esc(t)}</p>
+    </section>
+    <section class="card"><h3>3Dモデル</h3>
+      <p class="note">${esc(modelLabel ? `表示中: ${modelLabel}` : '標準モデルを表示中')}</p>
+      <label class="btn file">.glb ファイルを選ぶ<input type="file" id="setModelFile" accept=".glb,model/gltf-binary,application/octet-stream" hidden></label>
+      <label class="row">前後を反転 <input type="checkbox" class="switch" data-pref="modelFlip" ${s.modelFlip ? 'checked' : ''}></label>
+      <button class="btn ghost" data-action="clearModel">追加したモデルを外す</button>
+    </section>`;
+  showPanel();
+}
+
+function saveSettings() { store.set(SETTINGS_KEY, settings); }
+function applyPrefs() {
+  const root = document.documentElement;
+  root.style.setProperty('--accent', settings.accent);
+  root.dataset.panel = settings.panelStyle;
+  root.dataset.font = settings.fontSize;
+  viewer.setPrefs({ brightness: +settings.brightness, autoRotate: !!settings.autoRotate, rotateSpeed: +settings.rotateSpeed, garage: !!settings.garage });
   $('#carName').textContent = settings.carName || DEFAULTS.carName;
-  viewer.setBodyColor(settings.bodyColor);
-  viewer.setPlate(plateOf(settings));
-  if (file) idb.set('model', { name: file.name, blob: file }).then(loadModel).catch((e) => showError(`保存できませんでした: ${e.message || e}`));
-  else if (prevModel !== `${settings.modelUrl}|${settings.modelFlip}`) loadModel();
-  data = null;
-  $('#errorBanner').hidden = true;
-  schedule();
-  refresh({ manual: true });
-});
+}
 
-form.elements.modelFile.addEventListener('change', () => {
-  const f = form.elements.modelFile.files[0];
-  if (f) $('#modelInfo').textContent = `選択中: ${f.name}（${mb(f.size)}）→「保存して読み込み」で反映`;
+// one set of delegated handlers serves the vehicle and settings panels
+$('#panelBody').addEventListener('input', (e) => {
+  const el = e.target;
+  if (el.dataset.pref && el.type === 'range') {
+    settings[el.dataset.pref] = +el.value;
+    const out = el.parentElement.querySelector('output');
+    if (out) out.textContent = el.dataset.pref === 'brightness' ? `${Math.round(el.value * 100)}%` : el.value;
+    saveSettings(); applyPrefs();
+  }
 });
-$('#btnClearModel').addEventListener('click', async () => {
-  await idb.del('model');
-  settings.modelUrl = '';
-  form.elements.modelUrl.value = '';
-  store.set(SETTINGS_KEY, settings);
-  modelLabel = '';
-  viewer.clearModel();
-  $('#modelInfo').textContent = '未設定（標準モデルを表示中）';
+$('#panelBody').addEventListener('change', async (e) => {
+  const el = e.target;
+  if (el.dataset.vehicle) {
+    const v = vehicle(); v[el.dataset.vehicle] = el.value; store.set(VEHICLE_KEY, v);
+    if (el.type === 'date') openVehicle({ keepScroll: true });
+    return;
+  }
+  if (el.dataset.add) {
+    if (!docCache) await loadDocs();
+    const list = [...(docCache[el.dataset.add] || [])];
+    for (const f of el.files) list.push({ name: f.name, type: f.type, blob: f, at: Date.now() });
+    await saveDocs(el.dataset.add, list);
+    return;
+  }
+  if (el.id === 'setModelFile' && el.files[0]) {
+    const f = el.files[0];
+    await idb.set('model', { name: f.name, blob: f }).catch((err) => showError(`保存できませんでした: ${err.message || err}`));
+    await loadModel();
+    openSettings();
+    return;
+  }
+  if (!el.dataset.pref) return;
+  const k = el.dataset.pref;
+  if (el.type === 'checkbox') settings[k] = el.checked;
+  else if (el.type !== 'range') settings[k] = el.value;
+  saveSettings();
+  applyPrefs();
+  if (k === 'bodyColor') viewer.setBodyColor(settings.bodyColor);
+  if (k.startsWith('plate')) viewer.setPlate(plateOf(settings));
+  if (k === 'modelFlip') loadModel();
 });
-
-$('#btnRefresh').addEventListener('click', () => refresh({ manual: true }));
+$('#panelBody').addEventListener('click', async (e) => {
+  const seg = e.target.closest('[data-pref][data-value]');
+  if (seg) {
+    const k = seg.dataset.pref;
+    settings[k] = k === 'interval' ? +seg.dataset.value : seg.dataset.value;
+    saveSettings(); applyPrefs();
+    if (k === 'interval') schedule();
+    seg.parentElement.querySelectorAll('[data-pref]').forEach((b) => b.classList.toggle('on', b === seg));
+    return;
+  }
+  const act = e.target.closest('[data-action]')?.dataset.action;
+  if (act === 'refresh') { await refresh({ manual: true }); openSettings(); }
+  if (act === 'saveSheet') {
+    settings.sheet = $('#setSheet').value.trim() || DEFAULT_SHEET;
+    settings.sheetName = $('#setSheetName').value.trim();
+    saveSettings(); data = null; $('#errorBanner').hidden = true;
+    await refresh({ manual: true }); openSettings();
+  }
+  if (act === 'clearModel') {
+    await idb.del('model'); settings.modelUrl = ''; saveSettings(); modelLabel = '';
+    await loadModel(); openSettings();
+  }
+  const open = e.target.closest('[data-open]')?.dataset.open;
+  if (open) {
+    const [id, j] = open.split(':');
+    const f = (docCache?.[id] || [])[+j];
+    if (!f) return;
+    const url = URL.createObjectURL(f.blob);
+    if (f.type?.startsWith('image/')) { $('#docImg').src = url; $('#docViewer').hidden = false; }
+    else window.open(url, '_blank');
+  }
+  const del = e.target.closest('[data-del]')?.dataset.del;
+  if (del && confirm('この書類を削除しますか？')) {
+    const [id, j] = del.split(':');
+    const list = [...(docCache?.[id] || [])];
+    list.splice(+j, 1);
+    await saveDocs(id, list);
+  }
+});
+$('#docClose').addEventListener('click', () => { $('#docViewer').hidden = true; });
+$('#btnOpenSettings2').addEventListener('click', () => openSettings());
+applyPrefs();
 
 // ---------- update notice ----------
 // index.html carries the build number stamped at deploy time; version.json always has the latest one.
-const BUILD = document.querySelector('meta[name="app-build"]')?.content || '';
 async function checkUpdate() {
   if (!BUILD || BUILD.startsWith('__')) return; // local copy without a build number
   try {
