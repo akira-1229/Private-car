@@ -10,7 +10,7 @@ import { cloneMaterial, isClipped } from './detail.js';
 const LEVEL_COLORS = { bad: '#ff5a5f', warn: '#f5b83d', ok: '#34c77b' };
 
 export class CarViewer {
-  constructor(container, { bodyColor = '#080c0b', plate, onSelect } = {}) {
+  constructor(container, { bodyColor = '#05070b', plate, onSelect } = {}) {
     this.container = container;
     this.onSelect = onSelect || (() => {});
     this.parts = new Map(); // partId -> { meshes: [], anchor: Vector3, marker }
@@ -19,24 +19,29 @@ export class CarViewer {
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.0;
+    // slightly under 1 so the dark paint reads as black, not grey, in the bright garage
+    renderer.toneMappingExposure = 0.92;
     container.appendChild(renderer.domElement);
     this.renderer = renderer;
 
     const scene = new THREE.Scene();
     const pmrem = new THREE.PMREMGenerator(renderer);
-    scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    scene.environmentIntensity = 1.0;
+    this.envTex = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    scene.environment = this.envTex;
+    // note: with scene.environment, three.js replaces each material's envMapIntensity by this value;
+    // the paint gets its own envMap (see tunePaint) so its reflections can be weaker than the trims'
+    scene.environmentIntensity = 0.9;
     this.scene = scene;
 
-    // studio lighting tuned for a dark paint: key, cool rim lights and a soft fill
-    const key = new THREE.DirectionalLight(0xffffff, 1.6);
+    // studio lighting tuned for a deep black paint: the key and rim lights put crisp highlights
+    // on the clear coat (press lines, shoulder), the fill stays low so the flat panels stay black
+    const key = new THREE.DirectionalLight(0xffffff, 1.9);
     key.position.set(4, 8, 3);
-    const rimL = new THREE.DirectionalLight(0xa9c4ff, 1.6);
+    const rimL = new THREE.DirectionalLight(0xa9c4ff, 1.3);
     rimL.position.set(-6, 3, -5);
-    const rimR = new THREE.DirectionalLight(0xffffff, 1.0);
+    const rimR = new THREE.DirectionalLight(0xffffff, 0.9);
     rimR.position.set(-3, 4, 6);
-    scene.add(key, rimL, rimR, new THREE.HemisphereLight(0xcfe0ff, 0x1a1f28, 0.45));
+    scene.add(key, rimL, rimR, new THREE.HemisphereLight(0xcfe0ff, 0x1a1f28, 0.3));
 
     this.camera = new THREE.PerspectiveCamera(40, 1, 0.1, 100);
     this.controls = new OrbitControls(this.camera, renderer.domElement);
@@ -102,7 +107,7 @@ export class CarViewer {
   }
 
   // Body is a smooth loft traced from a side-view photo of the Insight ZE4 (js/body.js),
-  // detailed in js/model.js (grille mesh, LED lamps, trims, wheels, interior, opening panels).
+  // detailed in js/model.js (slatted grille, LED lamps, trims, wheels, interior, opening panels).
   #buildCar(bodyColor) {
     // number plates (texture drawn in setPlate)
     this.plateTex = new THREE.CanvasTexture(document.createElement('canvas'));
@@ -116,6 +121,7 @@ export class CarViewer {
     });
     this.panels = panels;
     this.wheels = wheels;
+    this.setBodyColor(bodyColor);
 
     // ---- markers (status dots shown over parts) ----
     for (const [id, p] of this.parts) {
@@ -340,8 +346,28 @@ export class CarViewer {
 
   setBodyColor(color) {
     for (const p of this.parts.values()) {
-      for (const m of p.meshes) if (m.material.name === 'paint') m.material.color.set(color);
+      for (const m of p.meshes) if (m.material.name === 'paint') CarViewer.tunePaint(m.material, color, this.envTex);
     }
+  }
+
+  /**
+   * Paint colour + reflection balance. The room environment is bright white, so at full strength
+   * a black clear coat mirrors it as silver-grey (hood and roof). Dark colours get a weaker,
+   * own envMap; the clear-coat highlights from the lights still trace the panel shapes.
+   */
+  static tunePaint(mat, color, envTex) {
+    mat.color.set(color);
+    const c = mat.color; // linear
+    const lum = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+    const dark = 1 - Math.min(1, Math.max(0, (lum - 0.004) / 0.12)); // 1 = black ... 0 = mid tones
+    if (mat.envMap !== envTex) { mat.envMap = envTex; mat.needsUpdate = true; }
+    mat.envMapIntensity = 0.95 - 0.6 * dark; // ~0.35 for black
+    mat.clearcoat = 1;
+    mat.clearcoatRoughness = 0.03;
+    mat.roughness = 0.42 - 0.1 * (1 - dark);
+    // the base layer's broad specular lobe is what turns black grey under the ceiling lights
+    mat.specularIntensity = 0.2 + 0.5 * (1 - dark);
+    mat.metalness = 0.08 + 0.2 * (1 - dark);
   }
 
   /** Smoothly moves the camera to look at a part of the car. */

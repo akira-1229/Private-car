@@ -8,7 +8,7 @@ const SETTINGS_KEY = 'carapp.settings.v1';
 const CACHE_KEY = 'carapp.cache.v1';
 const DEFAULT_SHEET = 'https://docs.google.com/spreadsheets/d/1-BuCzgFYa1fTVGN5v-L4rzbnQeDGJk0MMLSlXrWCPR0/edit';
 const DEFAULTS = {
-  sheet: DEFAULT_SHEET, sheetName: '', interval: 5, carName: 'インサイト', bodyColor: '#080c0b',
+  sheet: DEFAULT_SHEET, sheetName: '', interval: 5, carName: 'インサイト', bodyColor: '#05070b',
   plateRegion: '岐阜 303', plateKana: 'の', plateNumber: '55-10',
   // appearance (設定タブ)
   gasUrl: '', gasToken: '',
@@ -28,6 +28,8 @@ function loadSettings() {
   // the scanned-model settings were retired: the built-in model is always shown
   let retired = false;
   for (const k of ['carModel', 'modelUrl', 'modelFlip']) if (k in s) { delete s[k]; retired = true; }
+  // the old default black (#080c0b) looked grey-green: move it to the new deeper crystal black
+  if (String(s.bodyColor).toLowerCase() === '#080c0b') { s.bodyColor = DEFAULTS.bodyColor; retired = true; }
   const q = new URLSearchParams(location.search);
   let changed = false;
   for (const [qk, sk] of [['sheet', 'sheet'], ['tab', 'sheetName'], ['name', 'carName'], ['color', 'bodyColor']]) {

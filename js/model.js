@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { buildBody, dloOutline, GLASS, WHEELS, beltAt, topAt, creaseY } from './body.js';
 import {
   Probe, sweep, gridGeo, bake, mirrored, polyRegion, bandRegion, exprRegion, glslLookup, clipMaterial,
-  spline2, meshTexture, badgeTexture, textTexture, treadBump, sidewallTexture, labelTexture,
+  spline2, badgeTexture, textTexture, treadBump, sidewallTexture, labelTexture,
   boundaryChains, subsetGeo,
 } from './detail.js';
 
@@ -17,14 +17,18 @@ const V = (x, y, z) => new THREE.Vector3(x, y, z);
 // ---------------------------------------------------------------------------------------------
 const R = {
   // nose (angle around x = 1.45, degrees)
-  upperGrille: polyRegion('f', [[0, 0.576], [17, 0.582], [20.5, 0.6], [19, 0.637], [0, 0.645]]),
-  lowerGrille: polyRegion('f', [[0, 0.285], [27, 0.292], [30.5, 0.318], [24.5, 0.488], [0, 0.498]]),
-  fog: polyRegion('f', [[33.5, 0.31], [42.5, 0.33], [44.5, 0.455], [38, 0.49], [32.5, 0.455]]),
+  // one large grille between the headlights (6 horizontal slats); the plate sits on its lower middle
+  grille: polyRegion('f', [[0, 0.4], [18.5, 0.403], [21.5, 0.5], [21.6, 0.585], [19.5, 0.628], [0, 0.645]]),
+  // narrow dark opening under the plate
+  slot: polyRegion('f', [[0, 0.35], [23, 0.352], [24.5, 0.377], [0, 0.377]]),
+  // corner intakes; the top edge slopes down towards the centre (FOG_TOP)
+  fog: polyRegion('f', [[31.5, 0.362], [42.5, 0.366], [45, 0.425], [44.2, 0.488], [32, 0.43]]),
   head: bandRegion('f', [[21.5, 0.604, 0.638], [27, 0.606, 0.66], [34, 0.613, 0.681], [42, 0.628, 0.7], [49, 0.648, 0.716], [55, 0.668, 0.728], [59, 0.688, 0.733]]),
   // tail (angle around x = -1.55)
   tail: bandRegion('r', [[0, 0.944, 0.967], [17, 0.944, 0.969], [23, 0.926, 0.982], [32, 0.908, 0.992], [44, 0.902, 0.998], [54, 0.915, 0.998], [59, 0.935, 0.995]]),
   rearPlate: polyRegion('r', [[0, 0.565], [13.6, 0.568], [14.2, 0.752], [0, 0.756]]),
 };
+const FOG_TOP = [[32, 0.43], [44.2, 0.488]]; // inner -> outer
 const BELT_GLSL = glslLookup(beltAt, -1.4, 0.95, 14);
 const doorTest = (front, sd, withY) => (p) => {
   if (p.z * sd < 0.45) return false;
@@ -55,8 +59,13 @@ const TRUNK = exprRegion('P.x < -1.9 && az < 0.6 && P.y > 0.8', (p) => p.x < -1.
  */
 export function buildModel({ part, car, bodyColor, plateTex }) {
   // ---------------- materials ----------------
+  // deep pearl black: an almost non-metallic, slightly rough base under a mirror-like clear coat.
+  // The clear coat carries the sharp highlights that draw the press lines; the base adds only a
+  // faint pearl sheen, so the paint stays black instead of turning silver-grey in a bright room.
+  // (CarViewer.tunePaint sets the environment strength per colour.)
   const paint = new THREE.MeshPhysicalMaterial({
-    color: bodyColor, metalness: 0.35, roughness: 0.32, clearcoat: 1, clearcoatRoughness: 0.04,
+    color: bodyColor, metalness: 0.08, roughness: 0.42, specularIntensity: 0.2,
+    clearcoat: 1, clearcoatRoughness: 0.03,
   });
   paint.name = 'paint';
   const piano = new THREE.MeshPhysicalMaterial({ color: 0x050608, metalness: 0.2, roughness: 0.14, clearcoat: 1, clearcoatRoughness: 0.05 });
@@ -98,11 +107,11 @@ export function buildModel({ part, car, bodyColor, plateTex }) {
   const paintPlain = paint.clone(); // unclipped (recesses, press lines, fuel lid)
   const paintWall = paint.clone();
   paintWall.side = THREE.DoubleSide;
-  const wallMat = satin.clone();
-  wallMat.side = THREE.DoubleSide;
+  // walls of the grille / intake recesses: dead black so the openings read as deep shadow
+  const wallMat = new THREE.MeshStandardMaterial({ color: 0x050506, roughness: 0.9, metalness: 0, side: THREE.DoubleSide });
   const doorPaintCuts = Object.values(DOORS).map((d) => d.paint);
   const doorGlassCuts = Object.values(DOORS).map((d) => d.glass);
-  const holes = [R.upperGrille, R.lowerGrille, R.fog, R.head, R.tail, R.rearPlate];
+  const holes = [R.grille, R.slot, R.fog, R.head, R.tail, R.rearPlate];
   clipMaterial(paint, { cut: [...holes, ...doorPaintCuts, TRUNK] });
 
   const body = new THREE.Group();
@@ -247,63 +256,143 @@ export function buildModel({ part, car, bodyColor, plateTex }) {
   const front = new THREE.Group();
   const frontR = new THREE.Group(); // right half, mirrored afterwards
   {
-    const honey = meshTexture('honey');
-    const diamond = meshTexture('diamond');
-    const meshMat = (t) => new THREE.MeshStandardMaterial({
-      color: 0x1b1d21, metalness: 0.55, roughness: 0.35, alphaMap: t.tex, alphaTest: 0.5,
-      bumpMap: t.tex, bumpScale: 2.5, side: THREE.DoubleSide,
-    });
-    const meshPanel = (reg, t, depth) => {
-      const { rows, uvs } = polyRows(reg, -depth, 8, 26);
-      const geo = gridGeo(rows, uvs.map((r) => r.map(([z, y]) => [z / t.cellW, y / t.cellH])));
-      return new THREE.Mesh(geo, meshMat(t));
+    // ---- grille: stacked horizontal slats (solid bars with depth), as on the real ZE4 ----
+    // left/right limit (angle) of a convex (angle, y) polygon at height y
+    const spanAt = (reg, y) => {
+      const P = reg.pts;
+      let lo = Infinity, hi = -Infinity;
+      for (let k = 0; k < P.length; k++) {
+        const [ax, ay] = P[k], [bx, by] = P[(k + 1) % P.length];
+        if ((y - ay) * (y - by) > 0 || ay === by) continue;
+        const a = ax + ((bx - ax) * (y - ay)) / (by - ay);
+        lo = Math.min(lo, a); hi = Math.max(hi, a);
+      }
+      return Number.isFinite(lo) ? [lo, hi] : null;
     };
-    // upper grille: fine diamond mesh 18mm behind a piano-black frame
-    for (const [reg, t, depth] of [[R.upperGrille, diamond, 0.018], [R.lowerGrille, honey, 0.028]]) {
-      frontR.add(meshPanel(reg, t, depth));
-      // second, darker layer behind gives the mesh visible thickness at an angle
-      const back = meshPanel(reg, t, depth + 0.007);
-      back.material.color.set(0x07080a);
-      frontR.add(back);
-      const { rows } = polyRows(reg, -(depth + 0.05), 4, 12);
-      frontR.add(new THREE.Mesh(gridGeo(rows), voidMat));
-      frontR.add(walls(reg, depth + 0.05, wallMat));
-      // frame (piano black), only the outer half so the mirror copy closes it
-      frontR.add(tube(ring(reg, halfOutline(reg, 70), 0.004), 0.0075, piano));
+    // one slat: a bar swept along the surface line [a, y(a)], set back by `inset`.
+    // profile [u (outwards), v (up)]: the top face rises towards the back, so each bar leans back
+    // slightly, catches the light on top and throws a shadow on the bar below.
+    const slat = (line, inset, profile, mat) => {
+      const f = line.map(([a, y]) => nose(a, y, -inset)).filter(Boolean);
+      if (f.length < 3) return null;
+      // average normal of the whole line keeps the bar straight (no twist from single triangles)
+      return new THREE.Mesh(sweep(f, profile, { closedProfile: true, smoothN: 8 }), mat);
+    };
+    const slatLine = (a0, a1, y0, y1 = y0, n = 26) => Array.from({ length: n }, (_, i) => {
+      const t = i / (n - 1);
+      return [a0 + (a1 - a0) * t, y0 + (y1 - y0) * t];
+    });
+    // main bar (gloss black with a dark-chrome front lip), thinner black bar set further back
+    const barMain = [[0.0015, -0.0062], [0.0015, 0.0052], [-0.004, 0.0072], [-0.04, 0.0135], [-0.04, 0.0015], [-0.006, -0.0062]];
+    const barLip = [[0.0028, -0.0016], [0.0028, 0.0042], [0.0002, 0.006], [0.0002, -0.0016]];
+    const barBack = [[0, -0.0035], [0, 0.0035], [-0.03, 0.0095], [-0.03, 0.002]];
+    // bars: gloss black that does not mirror the bright room (low metalness, some roughness);
+    // only a thin dark-metal front lip catches a grey line, as on the real grille
+    const slatEdge = new THREE.MeshStandardMaterial({ color: 0x3c4148, metalness: 0.9, roughness: 0.32 });
+    const slatMat = new THREE.MeshStandardMaterial({ color: 0x0a0b0d, metalness: 0.05, roughness: 0.48 });
+    const slatBack = new THREE.MeshStandardMaterial({ color: 0x040405, metalness: 0, roughness: 0.85 });
+
+    const G = R.grille, gDepth = 0.075;
+    const [gy0, gy1] = [Math.min(...G.pts.map((p) => p[1])), Math.max(...G.pts.map((p) => p[1]))];
+    // 6 main bars over the full height (the photo shows 6 bright bar edges; the plate covers the
+    // lower middle) and a thin black bar half way between each pair
+    const NB = 6, pitch = (gy1 - gy0) / NB;
+    for (let i = 0; i < NB; i++) {
+      const y = gy0 + pitch * (i + 0.42);
+      const s = spanAt(G, y);
+      if (!s) continue;
+      const line = slatLine(0, s[1] + 0.4, y);
+      const m = slat(line, 0.007, barMain, slatMat);
+      if (m) frontR.add(m);
+      const lip = slat(line, 0.007, barLip, slatEdge);
+      if (lip) frontR.add(lip);
+      const yb = y + pitch * 0.5;
+      const sb = spanAt(G, yb);
+      if (sb && yb < gy1 - 0.008) {
+        const b = slat(slatLine(0, sb[1] + 0.4, yb), 0.026, barBack, slatBack);
+        if (b) frontR.add(b);
+      }
     }
-    // chrome wing bar over the upper grille, running out under the headlights
+    // vertical carriers behind the bars
+    for (const a of [6, 13]) {
+      const v = pts([gy0 + 0.004, (gy0 + gy1) / 2, gy1 - 0.004].map((y) => nose(a, y, -0.05)?.p));
+      if (v.length === 3) frontR.add(tube(v, 0.004, slatBack));
+    }
+    // dark back wall (in shadow) and the recess walls
+    const { rows: gb } = polyRows(G, -gDepth, 4, 12);
+    frontR.add(new THREE.Mesh(gridGeo(gb), voidMat));
+    frontR.add(walls(G, gDepth, wallMat));
+    frontR.add(tube(ring(G, halfOutline(G, 70), 0.003), 0.0065, piano));
+
+    // dark, narrow horizontal opening under the plate (fine black slats deep inside)
+    const S = R.slot, sDepth = 0.05;
+    const { rows: sb } = polyRows(S, -sDepth, 3, 10);
+    frontR.add(new THREE.Mesh(gridGeo(sb), voidMat));
+    frontR.add(walls(S, sDepth, wallMat));
+    frontR.add(tube(ring(S, halfOutline(S, 40), 0.002), 0.0045, piano));
+    {
+      const [sy0, sy1] = [Math.min(...S.pts.map((p) => p[1])), Math.max(...S.pts.map((p) => p[1]))];
+      for (let i = 1; i <= 3; i++) {
+        const y = sy0 + ((sy1 - sy0) * i) / 4;
+        const s = spanAt(S, y);
+        if (s) { const m = slat(slatLine(0, s[1] + 0.3, y), 0.02, barBack, slatMat); if (m) frontR.add(m); }
+      }
+    }
+
+    // chrome wing bar over the grille, running out under the headlights
     // the bar dips under the inner end of each headlight and follows its lower edge outwards
     const H = R.head;
     const wing = spline2([[0, 0.657], [9, 0.655], [15, 0.651], [19, 0.636], [21, H.ylo(21.5) - 0.006], [27, H.ylo(27) - 0.007], [34, H.ylo(34) - 0.008]], 48);
     const wf = wing.map(([a, y]) => nose(a, y, 0.004)).filter(Boolean);
     frontR.add(new THREE.Mesh(sweep(wf, [[-0.004, -0.008], [0.006, -0.0075], [0.0095, 0], [0.006, 0.0075], [-0.004, 0.008]], { closedProfile: true, smoothN: 6 }), chrome));
-    // body-colour bumper band: a soft crease above the lower grille
-    // fog lamp garnish: piano-black C-shaped recess, LED fog lamp and two slats
-    const fogDepth = 0.022;
-    const { rows: fr } = polyRows(R.fog, -fogDepth, 6, 10);
-    frontR.add(new THREE.Mesh(gridGeo(fr), piano));
-    frontR.add(walls(R.fog, fogDepth, wallMat));
-    frontR.add(tube(ring(R.fog, outline(R.fog, 60), 0.003), 0.006, piano, true));
-    const fogC = nose(39, 0.4, -fogDepth + 0.004);
-    if (fogC) {
-      const look = fogC.p.clone().add(fogC.n);
-      const lamp = new THREE.Group();
-      const reflector = new THREE.Mesh(new THREE.LatheGeometry([0.006, 0.018, 0.027, 0.031].map((r, i) => new THREE.Vector2(r, -0.012 + i * 0.005)), 32), chrome);
-      reflector.rotation.x = Math.PI / 2;
-      lamp.add(reflector);
-      const lens = new THREE.Mesh(new THREE.CircleGeometry(0.026, 32), ledWhite);
-      lens.position.z = 0.002;
-      lamp.add(lens);
-      const bezel = new THREE.Mesh(new THREE.TorusGeometry(0.032, 0.004, 8, 40), darkChrome);
-      bezel.position.z = 0.004;
-      lamp.add(bezel);
-      lamp.position.copy(fogC.p);
-      lamp.lookAt(look);
-      lamp.userData.lamp = true;
-      frontR.add(lamp);
-      for (const dy of [-0.055, 0.055]) {
-        const s = pts([36, 38.5, 41].map((a) => nose(a, 0.4 + dy, -0.008)?.p));
-        if (s.length === 3) frontR.add(tube(s, 0.0035, chrome));
+
+    // corner intakes: satin-black surround, 4 slats parallel to the sloping top edge,
+    // LED fog lamp (4 small square lenses) on the top slat
+    const F = R.fog, fDepth = 0.045;
+    const { rows: fb } = polyRows(F, -fDepth, 4, 10);
+    frontR.add(new THREE.Mesh(gridGeo(fb), voidMat));
+    frontR.add(walls(F, fDepth, wallMat));
+    frontR.add(tube(ring(F, outline(F, 60), 0.003), 0.0065, satin, true));
+    {
+      // top edge of the intake runs from fogTop[0] (inner) to fogTop[1] (outer)
+      const [[ia, iy], [oa, oy]] = FOG_TOP;
+      const yTop = (a) => iy + ((oy - iy) * (a - ia)) / (oa - ia);
+      const fy0 = Math.min(...F.pts.map((p) => p[1]));
+      for (let i = 0; i < 4; i++) {
+        const drop = 0.014 + i * 0.022;
+        // slat line parallel to the top edge, clipped to the opening
+        const line = [];
+        for (let k = 0; k <= 24; k++) {
+          const a = ia - 1 + ((oa - ia + 2) * k) / 24;
+          const y = yTop(a) - drop;
+          if (y < fy0 + 0.006) continue;
+          const s = spanAt(F, y);
+          if (s && a >= s[0] - 0.3 && a <= s[1] + 0.3) line.push([a, y]);
+        }
+        if (line.length < 4) continue;
+        const m = slat(line, 0.01, barMain.map(([u, v]) => [u * 0.8, v * 0.75]), slatMat);
+        if (m) frontR.add(m);
+        if (i === 0) {
+          // 4 LED fog lamps sitting on the top slat, inner half
+          for (const t of [0.34, 0.45, 0.56, 0.67]) {
+            const a = oa + (ia - oa) * t;
+            const h = nose(a, yTop(a) - drop + 0.009, -0.006);
+            const h2 = nose(a + 0.5, yTop(a + 0.5) - drop + 0.009, -0.006);
+            if (!h || !h2) continue;
+            const led = new THREE.Group();
+            const lens = new THREE.Mesh(new THREE.BoxGeometry(0.019, 0.0085, 0.005), ledWhite);
+            const bez = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.011, 0.004), darkChrome);
+            bez.position.z = -0.002;
+            led.add(bez, lens);
+            // local x along the slat, local z out of the surface
+            const ex = h2.p.clone().sub(h.p).normalize();
+            const ez = h.n.clone().addScaledVector(ex, -h.n.dot(ex)).normalize();
+            led.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(ex, new THREE.Vector3().crossVectors(ez, ex), ez));
+            led.position.copy(h.p);
+            led.userData.lamp = true;
+            frontR.add(led);
+          }
+        }
       }
     }
     // lower lip spoiler (piano black) under the bumper
@@ -317,9 +406,9 @@ export function buildModel({ part, car, bodyColor, plateTex }) {
   const frontBaked = bake(frontR);
   front.add(frontBaked, mirrored(frontBaked));
 
-  // centre badge (simplified H in an oval) on the upper grille
+  // centre badge (simplified H in an oval) on the top of the grille
   {
-    const c = probe.front(0.615, 0, 0.012);
+    const c = probe.front(0.588, 0, 0.016);
     const badge = new THREE.Group();
     const face = new THREE.Mesh(new THREE.CircleGeometry(0.05, 40), new THREE.MeshStandardMaterial({ map: badgeTexture(), metalness: 0.9, roughness: 0.18 }));
     face.scale.y = 0.8;
@@ -336,16 +425,17 @@ export function buildModel({ part, car, bodyColor, plateTex }) {
     badge.lookAt(c.p.clone().add(V(1, 0, 0)));
     front.add(badge);
   }
-  // front plate on a piano-black holder over the lower grille
+  // front plate on a piano-black holder over the lower middle of the grille
   {
-    const c = probe.front(0.43, 0, 0.0);
+    const PLATE_Y = 0.447; // plate centre (its lower edge overlaps the slot as on the real car)
+    const c = probe.front(PLATE_Y, 0, 0.0);
     const holder = new THREE.Mesh(new THREE.BoxGeometry(0.028, 0.185, 0.355), piano);
-    holder.position.set(c.p.x - 0.004, 0.43, 0);
+    holder.position.set(c.p.x - 0.004, PLATE_Y, 0);
     const back = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.167, 0.333), plateMat);
-    back.position.set(c.p.x + 0.013, 0.43, 0);
+    back.position.set(c.p.x + 0.013, PLATE_Y, 0);
     const face = new THREE.Mesh(new THREE.PlaneGeometry(0.33, 0.165), plateFace);
     face.rotation.y = Math.PI / 2;
-    face.position.set(c.p.x + 0.0175, 0.43, 0);
+    face.position.set(c.p.x + 0.0175, PLATE_Y, 0);
     front.add(holder, back, face);
   }
   body.add(front);

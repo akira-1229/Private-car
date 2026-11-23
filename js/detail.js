@@ -1,6 +1,6 @@
 // Detail parts for the built-in Insight (ZE4) model: surface probing, swept trims, clip regions
 // (openings cut into the paint by the shader), canvas textures and the hand-built parts
-// (grille mesh, LED headlights, tail lamps, wheels, mirrors, trims, interior).
+// (slatted grille, LED headlights, tail lamps, wheels, mirrors, trims, interior).
 // Coordinates: +X = front, +Y = up, +Z = right side, metres, ground at y = 0.
 import * as THREE from 'three';
 import { mergeGeometries } from '../vendor/utils/BufferGeometryUtils.js';
@@ -410,54 +410,6 @@ function canvasTex(w, h, draw, { repeat = false, srgb = true } = {}) {
   t.anisotropy = 8;
   if (repeat) t.wrapS = t.wrapT = THREE.RepeatWrapping;
   return t;
-}
-
-/**
- * Grille mesh pattern: opaque strands (white) with transparent openings. `kind` = 'honey' | 'diamond'.
- * Returns { tex, cellW, cellH }: one texture tile covers cellW x cellH metres.
- */
-export function meshTexture(kind) {
-  if (kind === 'honey') {
-    // pointy-top hexagons: 4 across and 2 rows per tile, so the tile repeats seamlessly
-    const W = 256, sx = W / 4, r = sx / Math.sqrt(3), H = Math.round(3 * r);
-    const tex = canvasTex(W, H, (c) => {
-      c.fillStyle = '#fff';
-      c.fillRect(0, 0, W, H);
-      c.globalCompositeOperation = 'destination-out';
-      const hole = r * 0.8;
-      for (let row = -1; row <= 2; row++) {
-        for (let col = -1; col <= 4; col++) {
-          const cx = col * sx + (Math.abs(row) % 2 ? sx / 2 : 0), cy = row * (H / 2);
-          c.beginPath();
-          for (let k = 0; k < 6; k++) {
-            const a = Math.PI / 6 + (k * Math.PI) / 3;
-            c.lineTo(cx + Math.cos(a) * hole, cy + Math.sin(a) * hole);
-          }
-          c.closePath();
-          c.fill();
-        }
-      }
-    }, { repeat: true, srgb: false });
-    return { tex, cellW: 0.09, cellH: 0.09 * (H / W) };
-  }
-  // diamond (rhombus) mesh: 4 across and 2 rows per tile
-  const W = 256, H = 128;
-  const tex = canvasTex(W, H, (c) => {
-    c.fillStyle = '#fff';
-    c.fillRect(0, 0, W, H);
-    c.globalCompositeOperation = 'destination-out';
-    const dx = W / 4, dy = H / 2, bw = dx * 0.4, bh = dy * 0.4;
-    for (let row = -1; row <= 2; row++) {
-      for (let col = -1; col <= 4; col++) {
-        const cx = col * dx + (Math.abs(row) % 2 ? dx / 2 : 0), cy = row * dy;
-        c.beginPath();
-        c.moveTo(cx, cy - bh); c.lineTo(cx + bw, cy); c.lineTo(cx, cy + bh); c.lineTo(cx - bw, cy);
-        c.closePath();
-        c.fill();
-      }
-    }
-  }, { repeat: true, srgb: false });
-  return { tex, cellW: 0.072, cellH: 0.036 };
 }
 
 /** simplified oval badge with an "H"-like mark (not the real logo) */
