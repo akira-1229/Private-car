@@ -69,7 +69,42 @@ export function bottomAt(x) {
 }
 
 // segment sample counts for one half of a cross-section (bottom centre -> top centre)
-const SEG = { bottom: 6, side: 10, shoulder: 5, house: 10, roof: 12 };
+// the side band carries 4 extra samples packed around the character line so the crease stays sharp
+const SEG = { bottom: 6, side: 22, shoulder: 5, house: 10, roof: 14 };
+const CREASE_PTS = [-0.016, -0.006, 0.006, 0.016];
+
+// fade in / out helper
+const ramp = (v, a, b) => Math.min(1, Math.max(0, (v - a) / (b - a)));
+const smooth = (t) => t * t * (3 - 2 * t);
+
+// Upper character line: runs just under the door handles from behind the headlight into the tail lamp.
+export function creaseY(x) { return beltAt(x) - 0.095; }
+function creaseAmp(x) { return 0.0055 * smooth(ramp(x, -2.3, -1.95)) * smooth(ramp(-x, -2.05, -1.8)); }
+// Lower sculpted line on the doors: rises towards the rear (a soft concave groove).
+export function lowerLineY(x) { return 0.47 + 0.16 * ((0.75 - x) / 2.0); }
+function lowerAmp(x) { return -0.007 * smooth(ramp(x, -1.75, -1.35)) * smooth(ramp(-x, -1.05, -0.75)); }
+
+function sideOffset(x, y) {
+  let o = 0;
+  const dc = y - creaseY(x);
+  // sharp ridge: steeper below the line (the lit "blade"), softer fall-off above it
+  if (dc > 0) o += creaseAmp(x) * Math.max(0, 1 - dc / 0.06);
+  else o += creaseAmp(x) * Math.max(0, 1 + dc / 0.028);
+  const dl = y - lowerLineY(x);
+  o += lowerAmp(x) * Math.exp(-(dl * dl) / (2 * 0.022 * 0.022));
+  return o;
+}
+
+/**
+ * Plan-view curvature of the nose and the tail: the corners are pulled back so the front face is
+ * rounded in plan instead of flat (a straight loft ring would give a boxy bumper).
+ */
+export function bowX(x, z) {
+  const k = (z / 0.9) ** 2;
+  if (x > 1.55) return x - 0.15 * smooth(ramp(x, 1.55, X_FRONT)) * k;
+  if (x < -1.85) return x + 0.075 * smooth(ramp(-x, 1.85, -X_REAR)) * k;
+  return x;
+}
 const HALF = SEG.bottom + SEG.side + SEG.shoulder + SEG.house + SEG.roof + 1;
 
 function quad(p0, c, p1, t) {
@@ -92,13 +127,18 @@ function section(x) {
     const t = i / SEG.bottom;
     push(t < 0.6 ? [b0[0] + (W - 0.1) * (t / 0.6), yb] : quad([W - 0.1, yb], bC, b1, (t - 0.6) / 0.4), 'bottom');
   }
-  // side: slight outward bulge, tucked in at the bottom
-  const s0 = yb + 0.09, s1 = Math.max(s0, yS - 0.07);
-  for (let i = 0; i < SEG.side; i++) {
-    const t = i / SEG.side;
-    const y = s0 + (s1 - s0) * t;
+  // side: slight outward bulge, tucked in at the bottom, with the press lines
+  const s0 = yb + 0.09, s1 = Math.max(s0 + 0.001, yS - 0.07);
+  const n = SEG.side - CREASE_PTS.length;
+  const ys = [];
+  for (let i = 0; i < n; i++) ys.push(s0 + (s1 - s0) * (i / n));
+  const yc = Math.min(s1 - 0.02, Math.max(s0 + 0.02, creaseY(x)));
+  for (const d of CREASE_PTS) ys.push(Math.min(s1 - 0.001, Math.max(s0 + 0.001, yc + d)));
+  ys.sort((a, b) => a - b);
+  for (const y of ys) {
+    const t = (y - s0) / (s1 - s0);
     const bulge = Math.sin(Math.PI * (0.25 + 0.6 * t));
-    push([W - 0.03 + 0.03 * bulge, y], 'side');
+    push([W - 0.03 + 0.03 * bulge + sideOffset(x, y), y], 'side');
   }
   // shoulder: round over to the base of the greenhouse / hood
   const Wg = W - 0.07;
@@ -157,7 +197,7 @@ export function buildBody() {
     const ring = [...right.map(([z, y, s]) => [z, y, s])];
     for (let i = HALF - 2; i >= 1; i--) ring.push([-right[i][0], right[i][1], right[i][2]]);
     for (const [z, y, s] of ring) {
-      pos.push(r.x, y, z);
+      pos.push(bowX(r.x, z), y, z);
       segOf.push(r.cap ? 'cap' : s);
     }
   }
@@ -194,7 +234,7 @@ export function buildBody() {
     for (let j = 0; j < M; j++) cy += pos[(base + j) * 3 + 1];
     cy /= M;
     const centre = pos.length / 3;
-    pos.push(cx, cy, 0);
+    pos.push(bowX(cx, 0), cy, 0);
     for (let j = 0; j < M; j++) {
       const a = base + j, b = base + ((j + 1) % M);
       if (flip) idx.paint.push(centre, a, b); else idx.paint.push(centre, b, a);
@@ -226,7 +266,7 @@ export function surfacePoint(x, y, off = 0) {
     const d = Math.abs(p[1] - y) + (p[2] === 'bottom' ? 1 : 0);
     if (d < bd) { bd = d; best = p; }
   }
-  return new THREE.Vector3(x, y, best[0] + off);
+  return new THREE.Vector3(bowX(x, best[0]), y, best[0] + off);
 }
 
 /** Window opening outline on the right side (for the chrome surround). */

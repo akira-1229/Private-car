@@ -9,10 +9,9 @@ const CACHE_KEY = 'carapp.cache.v1';
 const DEFAULT_SHEET = 'https://docs.google.com/spreadsheets/d/1-BuCzgFYa1fTVGN5v-L4rzbnQeDGJk0MMLSlXrWCPR0/edit';
 const DEFAULTS = {
   sheet: DEFAULT_SHEET, sheetName: '', interval: 5, carName: 'インサイト', bodyColor: '#080c0b',
-  plateRegion: '岐阜 303', plateKana: 'の', plateNumber: '55-10', modelUrl: '', modelFlip: false,
+  plateRegion: '岐阜 303', plateKana: 'の', plateNumber: '55-10',
   // appearance (設定タブ)
   gasUrl: '', gasToken: '',
-  carModel: 'scan',
   brightness: 1, accent: '#4f8cff', panelStyle: 'glass', fontSize: 'm', autoRotate: true, rotateSpeed: 0.8, garage: true,
 };
 
@@ -26,11 +25,15 @@ const store = {
 function loadSettings() {
   const s = { ...DEFAULTS, ...store.get(SETTINGS_KEY, {}) };
   if (!s.sheet) s.sheet = DEFAULT_SHEET;
+  // the scanned-model settings were retired: the built-in model is always shown
+  let retired = false;
+  for (const k of ['carModel', 'modelUrl', 'modelFlip']) if (k in s) { delete s[k]; retired = true; }
   const q = new URLSearchParams(location.search);
   let changed = false;
   for (const [qk, sk] of [['sheet', 'sheet'], ['tab', 'sheetName'], ['name', 'carName'], ['color', 'bodyColor']]) {
     if (q.has(qk)) { s[sk] = q.get(qk); changed = true; }
   }
+  if (retired && !changed) store.set(SETTINGS_KEY, s);
   if (changed) {
     store.set(SETTINGS_KEY, s);
     history.replaceState(null, '', location.pathname);
@@ -72,7 +75,7 @@ function toast(msg) {
 
 $('#carName').textContent = settings.carName || DEFAULTS.carName;
 
-// ---------- scanned 3D model (kept in IndexedDB on this device) ----------
+// ---------- files kept on this device (IndexedDB) ----------
 const idb = {
   open() {
     return new Promise((res, rej) => {
@@ -96,48 +99,8 @@ const idb = {
   del: (k) => idb.run('readwrite', (s) => s.delete(k)).catch(() => {}),
 };
 
-let modelLabel = '';
-async function loadModel() {
-  if (settings.carModel === 'smooth') { viewer.clearModel(); modelLabel = 'なめらかモデル'; return; }
-  let src = null;
-  const saved = await idb.get('model');
-  if (saved?.blob) { src = await saved.blob.arrayBuffer(); modelLabel = `${saved.name}（${mb(saved.blob.size)}・この端末に保存）`; }
-  else if (settings.modelUrl) { src = settings.modelUrl; modelLabel = settings.modelUrl; }
-  else {
-    // a scan committed to the repository: models/car.json (Gaussian splat + alignment) or models/car.glb
-    try {
-      const r = await fetch('models/car.json', { cache: 'no-store' });
-      if (r.ok) {
-        const cfg = await r.json();
-        $('#hint').textContent = '実車スキャンを読み込み中…';
-        try {
-          if (cfg.parts) await viewer.loadSplatParts('models/', cfg);
-          else await viewer.loadSplat(`models/${cfg.file}`, cfg.matrix);
-          modelLabel = `models/${cfg.file}（実車スキャン）`;
-        } catch (e) {
-          showError(`実車スキャンを表示できませんでした（${e.message || e}）`);
-        } finally {
-          $('#hint').textContent = 'ドラッグで回転 ・ タップで記録 ・ ダブルタップでドア開閉';
-        }
-        return;
-      }
-      const g = await fetch('models/car.glb', { method: 'HEAD', cache: 'no-store' });
-      if (g.ok) { src = 'models/car.glb'; modelLabel = 'models/car.glb（リポジトリ内）'; }
-    } catch { /* none */ }
-  }
-  if (!src) { viewer.clearModel(); modelLabel = ''; return; }
-  $('#hint').textContent = '3Dモデルを読み込み中…';
-  try {
-    await viewer.loadModel(src, { flip: !!settings.modelFlip });
-  } catch (e) {
-    viewer.clearModel();
-    showError(`3Dモデルを読み込めませんでした（${e.message || e}）。.glb 形式か確認してください。`);
-    modelLabel = '';
-  } finally {
-    $('#hint').textContent = 'ドラッグで回転 ・ タップで記録 ・ ダブルタップでドア開閉';
-  }
-}
-const mb = (n) => `${(n / 1048576).toFixed(1)}MB`;
+// a 3D scan saved by an older version is no longer used: free the space
+idb.del('model');
 
 // ---------- data ----------
 let lastTable = null;
@@ -502,7 +465,6 @@ function openSettings() {
       <div class="row">文字の大きさ<div class="segs">${opt('fontSize', [['s', '小'], ['m', '標準'], ['l', '大']])}</div></div>
     </section>
     <section class="card"><h3>3D</h3>
-      <div class="row">車の表示<div class="segs">${opt('carModel', [['scan', '実車スキャン'], ['smooth', 'なめらか']])}</div></div>
       <label class="row">自動で回転 <input type="checkbox" class="switch" data-pref="autoRotate" ${s.autoRotate ? 'checked' : ''}></label>
       <label class="row">回転の速さ <output>${s.rotateSpeed}</output>
         <input type="range" min="0.2" max="3" step="0.1" value="${s.rotateSpeed}" data-pref="rotateSpeed"></label>
@@ -515,7 +477,7 @@ function openSettings() {
         <label class="field">ひらがな<input data-pref="plateKana" maxlength="1" value="${esc(s.plateKana)}"></label>
         <label class="field">番号<input data-pref="plateNumber" value="${esc(s.plateNumber)}"></label>
       </div>
-      <label class="row">ボディカラー（標準モデル） <input type="color" data-pref="bodyColor" value="${esc(s.bodyColor)}"></label>
+      <label class="row">ボディカラー <input type="color" data-pref="bodyColor" value="${esc(s.bodyColor)}"></label>
     </section>
     <section class="card"><h3>データ</h3>
       <label class="field">スプレッドシートの URL<input type="url" id="setSheet" value="${esc(s.sheet)}" autocomplete="off"></label>
@@ -535,12 +497,6 @@ function openSettings() {
       ① 点検管理表で「拡張機能 → Apps Script」を開く ② コピーしたスクリプトを貼り付け、TOKEN を合言葉に変えて保存
       ③「デプロイ → 新しいデプロイ → ウェブアプリ」（実行ユーザー：自分／アクセス：全員）④ 出てきた URL と合言葉をここに入れて保存
       ${pending().length ? `<br>送信待ち：${pending().filter((p) => !p.sent).length}件` : ''}</p>
-    </section>
-    <section class="card"><h3>3Dモデル</h3>
-      <p class="note">${esc(modelLabel ? `表示中: ${modelLabel}` : '標準モデルを表示中')}</p>
-      <label class="btn file">.glb ファイルを選ぶ<input type="file" id="setModelFile" accept=".glb,model/gltf-binary,application/octet-stream" hidden></label>
-      <label class="row">前後を反転 <input type="checkbox" class="switch" data-pref="modelFlip" ${s.modelFlip ? 'checked' : ''}></label>
-      <button class="btn ghost" data-action="clearModel">追加したモデルを外す</button>
     </section>`;
   showPanel();
 }
@@ -579,13 +535,6 @@ $('#panelBody').addEventListener('change', async (e) => {
     await saveDocs(el.dataset.add, list);
     return;
   }
-  if (el.id === 'setModelFile' && el.files[0]) {
-    const f = el.files[0];
-    await idb.set('model', { name: f.name, blob: f }).catch((err) => showError(`保存できませんでした: ${err.message || err}`));
-    await loadModel();
-    openSettings();
-    return;
-  }
   if (!el.dataset.pref) return;
   const k = el.dataset.pref;
   if (el.type === 'checkbox') settings[k] = el.checked;
@@ -594,7 +543,6 @@ $('#panelBody').addEventListener('change', async (e) => {
   applyPrefs();
   if (k === 'bodyColor') viewer.setBodyColor(settings.bodyColor);
   if (k.startsWith('plate')) viewer.setPlate(plateOf(settings));
-  if (k === 'modelFlip') loadModel();
 });
 $('#panelBody').addEventListener('click', async (e) => {
   const seg = e.target.closest('[data-pref][data-value]');
@@ -603,7 +551,6 @@ $('#panelBody').addEventListener('click', async (e) => {
     settings[k] = k === 'interval' ? +seg.dataset.value : seg.dataset.value;
     saveSettings(); applyPrefs();
     if (k === 'interval') schedule();
-    if (k === 'carModel') loadModel();
     seg.parentElement.querySelectorAll('[data-pref]').forEach((b) => b.classList.toggle('on', b === seg));
     return;
   }
@@ -627,10 +574,6 @@ $('#panelBody').addEventListener('click', async (e) => {
       await navigator.clipboard.writeText(code);
       toast('スクリプトをコピーしました');
     } catch { window.open('gas/Code.gs', '_blank'); }
-  }
-  if (act === 'clearModel') {
-    await idb.del('model'); settings.modelUrl = ''; saveSettings(); modelLabel = '';
-    await loadModel(); openSettings();
   }
   const open = e.target.closest('[data-open]')?.dataset.open;
   if (open) {
@@ -862,7 +805,6 @@ setInterval(checkUpdate, 10 * 60000);
 // ---------- start ----------
 refresh();
 schedule();
-loadModel();
 checkUpdate();
 
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
