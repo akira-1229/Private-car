@@ -13,8 +13,8 @@ export const PARTS = {
   dashcam: { label: 'ドライブレコーダー', words: ['ドラレコ', 'ドライブレコーダー'] },
   rear_window: { label: 'リアガラス', words: ['リアガラス', 'リヤガラス', 'リアウィンドウ', 'リアウインドウ', 'リヤウィンドウ'] },
   side_window: { label: 'サイドガラス・窓', words: ['サイドガラス', 'ドアガラス', 'パワーウィンドウ', 'パワーウインドウ', '窓'] },
-  body: { label: 'ボディ・車両全般', words: ['ボディ', 'ボディー', '塗装', '外装', '洗車', 'コーティング', 'コート', 'キーパー', '研磨', 'ポリッシュ', 'ワックス', 'キズ', '傷', 'へこみ', '凹み', 'ドア', 'バンパー', '車体', 'サビ', '錆', 'マフラー', '下回り', '鈑金', '板金'], exclude: ['ドアガラス', 'ドアミラー'] },
-  engine: { label: 'エンジンルーム', words: ['エンジン', 'オイル', 'バッテリー', '冷却', 'クーラント', 'LLC', 'ラジエーター', 'ラジエータ', 'ベルト', 'エレメント', 'フィルター', 'プラグ', 'ATF', 'CVT', 'ブレーキフルード', 'ブレーキ液', 'ボンネット', 'ミッション'], exclude: ['シートベルト', 'エアコンフィルター'] },
+  body: { label: 'ボディ（洗車・清掃）', words: ['ボディ', 'ボディー', '塗装', '外装', '洗車', 'コーティング', 'コート', 'キーパー', '研磨', 'ポリッシュ', 'ワックス', 'キズ', '傷', 'へこみ', '凹み', 'ドア', 'バンパー', '車体', 'サビ', '錆', 'マフラー', '下回り', '鈑金', '板金'], exclude: ['ドアガラス', 'ドアミラー'] },
+  engine: { label: 'エンジンルーム（点検・整備）', words: ['エンジン', 'オイル', 'バッテリー', '冷却', 'クーラント', 'LLC', 'ラジエーター', 'ラジエータ', 'ベルト', 'エレメント', 'フィルター', 'プラグ', 'ATF', 'CVT', 'ブレーキフルード', 'ブレーキ液', 'ボンネット', 'ミッション'], exclude: ['シートベルト', 'エアコンフィルター'] },
   headlight: { label: 'ヘッドライト・前方灯火', words: ['ヘッドライト', 'ヘッドランプ', 'フォグ', 'ウインカー', 'ウィンカー', 'スモール', 'ライト', 'ランプ', 'バルブ'] , exclude: ['テールランプ', 'テールライト', 'テール', 'ブレーキランプ', 'ブレーキライト', 'バックランプ', 'リアランプ', 'リヤランプ', 'ナンバー灯', 'ルームランプ'] },
   taillight: { label: 'テールランプ・後方灯火', words: ['テール', 'ブレーキランプ', 'ブレーキライト', 'バックランプ', 'リアランプ', 'リヤランプ', 'ナンバー灯', 'ハザード'] },
   mirror: { label: 'ミラー', words: ['ミラー'] },
@@ -184,6 +184,7 @@ export function interpret(table, today = new Date()) {
   // avoid "次回点検日" being taken as "last" and "点検内容" etc.
   if (col.last >= 0 && col.last === col.next) col.last = headers.findIndex((h, i) => i !== col.next && HEADER_RX.last.test(h));
 
+  const catMode = col.part >= 0 && /カテゴリ/.test(headers[col.part]);
   const rows = [];
   for (const r of clean.slice(hi + 1)) {
     if (!r.some((c) => c)) continue;
@@ -192,9 +193,17 @@ export function interpret(table, today = new Date()) {
     const all = r.join(' ');
     // parts named in the 部位/カテゴリ, 項目 and 備考/特記事項 columns (or the whole row if none of them exist)
     const fields = ['part', 'item', 'note'].filter((k) => col[k] >= 0).map(get).filter((v) => v && !EMPTY.test(v));
-    const parts = col.part >= 0 || col.item >= 0 || col.note >= 0
+    let parts = col.part >= 0 || col.item >= 0 || col.note >= 0
       ? [...new Set(fields.flatMap((f) => matchParts(f)))]
       : matchParts(all);
+    // with a カテゴリ column (the 点検管理表): 点検・整備 always goes to the engine bay, and the body shows
+    // 洗車・清掃 only. Other parts the text names (wiper, lights, ...) still get the record as well.
+    if (catMode) {
+      const cat = get('part');
+      parts = parts.filter((id) => id !== 'body');
+      if (/点検|整備/.test(cat)) parts = ['engine', ...parts.filter((id) => id !== 'engine')];
+      if (/洗車|清掃/.test(cat)) parts = ['body', ...parts];
+    }
     const shop = [col.shop >= 0 ? headers.map((h, i) => (HEADER_RX.shop.test(h) ? r[i] : '')).filter((v) => v && !EMPTY.test(v)).join(' ') : ''][0];
     const title = [get('part'), get('item')].filter(Boolean).join(' / ') || r.find(Boolean) || '(無題)';
     const sub = [get('date').replace(/\s+/g, ' '), shop].filter(Boolean).join(' ・ ');
@@ -250,7 +259,7 @@ export function interpret(table, today = new Date()) {
   const levels = {};
   for (const id of [...Object.keys(PARTS), GENERAL.id]) byPart[id] = [];
   for (const row of rows) {
-    const ids = row.parts.length ? row.parts : [GENERAL.id, 'body'];
+    const ids = row.parts.length ? row.parts : [GENERAL.id];
     for (const id of ids) byPart[id].push(row);
   }
   for (const [id, list] of Object.entries(byPart)) levels[id] = worst(list.map((r) => r.level));
