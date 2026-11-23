@@ -214,7 +214,13 @@ document.addEventListener('visibilitychange', () => {
 // ---------- tab bar ----------
 const TABS = {
   vehicle: () => openVehicle(),
-  maint: () => { viewer.select('engine'); openPart('engine', { title: '点検整備', tab: 'maint' }); },
+  maint: () => {
+    // open the hood, look into the engine bay and make it glow
+    if (viewer.panels?.has('hood')) viewer.togglePanel('hood', true);
+    viewer.focusOn('hood');
+    viewer.select('engine');
+    openPart('engine', { title: '点検整備', tab: 'maint' });
+  },
   wash: () => { viewer.select('body'); openPart('body', { title: '洗車清掃', tab: 'wash' }); },
   settings: () => openSettings(),
 };
@@ -352,7 +358,9 @@ function showPanel({ keepScroll = false } = {}) {
   requestAnimationFrame(() => viewer.setBottomInset($('#panel').offsetHeight));
 }
 function closePanel() {
+  const wasMaint = currentView?.tab === 'maint';
   currentView = null;
+  if (wasMaint && viewer.panels?.get('hood')?.target > 0.5) viewer.togglePanel('hood', false); // close the hood again
   setActiveTab(null);
   viewer.select(null);
   $('#panel').classList.remove('open');

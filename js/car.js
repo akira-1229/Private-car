@@ -56,6 +56,7 @@ export class CarViewer {
     this.controls.target.set(0, 0.65, 0);
     this.controls.addEventListener('start', () => {
       this.controls.autoRotate = false;
+      this._camGoal = null; // the user takes over from any automatic camera move
       this.onInteract?.();
     });
 
@@ -471,7 +472,7 @@ export class CarViewer {
   togglePanel(id, open) {
     const p = this.panels?.get(id);
     if (!p) return;
-    p.target = open ?? (p.target > 0.5 ? 0 : 1);
+    p.target = open === undefined ? (p.target > 0.5 ? 0 : 1) : (open ? 1 : 0);
     this.controls.autoRotate = false;
     this.onPanel?.(id, p.target > 0.5, p.label);
   }
@@ -770,6 +771,18 @@ export class CarViewer {
     }
   }
 
+  /** Smoothly moves the camera to look at a part of the car. */
+  focusOn(what) {
+    const views = {
+      hood: { target: [1.0, 0.75, 0], pos: [5.2, 3.3, 2.4] }, // front three-quarter, looking down into the engine bay
+      body: { target: [0, 0.65, 0], pos: [4.6, 2.6, 4.8] },
+    };
+    const v = views[what];
+    if (!v) return;
+    this.controls.autoRotate = false;
+    this._camGoal = { target: new THREE.Vector3(...v.target), pos: new THREE.Vector3(...v.pos) };
+  }
+
   /** Appearance settings from the 設定 tab. */
   setPrefs({ brightness = 1, autoRotate = true, rotateSpeed = 0.8, garage = true } = {}) {
     // a CSS filter brightens the splat scan and the meshes alike
@@ -833,6 +846,12 @@ export class CarViewer {
       const pr = this.renderer.getPixelRatio();
       this.camera.setViewOffset(w / pr, h / pr, 0, this._inset * 0.45, w / pr, h / pr);
     } else if (this.camera.view) this.camera.clearViewOffset();
+    if (this._camGoal) {
+      const g = this._camGoal;
+      this.controls.target.lerp(g.target, 0.07);
+      this.camera.position.lerp(g.pos, 0.07);
+      if (this.camera.position.distanceTo(g.pos) < 0.01 && this.controls.target.distanceTo(g.target) < 0.01) this._camGoal = null;
+    }
     this.controls.update();
     this.garage?.userData.update(this.camera);
     this.renderer.render(this.scene, this.camera);
