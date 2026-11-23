@@ -22,7 +22,8 @@
  "parts": [
   {
    "id": "body",
-   "file": "parts/body.spz"
+   "file": "parts/body.spz",
+   "open": null
   },
   {
    "id": "door_fr",
@@ -38,7 +39,8 @@
     1,
     0
    ],
-   "angle": 62
+   "angle": 82,
+   "open": "open/door_fr_open.spz"
   },
   {
    "id": "door_rr",
@@ -54,7 +56,8 @@
     1,
     0
    ],
-   "angle": 62
+   "angle": 62,
+   "open": "open/door_rr_open.spz"
   },
   {
    "id": "door_fl",
@@ -70,7 +73,8 @@
     1,
     0
    ],
-   "angle": -62
+   "angle": -78,
+   "open": "open/door_fl_open.spz"
   },
   {
    "id": "door_rl",
@@ -86,7 +90,8 @@
     1,
     0
    ],
-   "angle": -62
+   "angle": -64,
+   "open": "open/door_rl_open.spz"
   },
   {
    "id": "hood",
@@ -102,7 +107,8 @@
     0,
     1
    ],
-   "angle": 48
+   "angle": 38,
+   "open": "open/hood_open.spz"
   },
   {
    "id": "trunk",
@@ -118,7 +124,55 @@
     0,
     1
    ],
-   "angle": -62
+   "angle": -105,
+   "open": "open/trunk_open.spz"
   }
- ]
+ ],
+ "open": {
+  "matrix": [
+   0.9023641,
+   0.0,
+   0.4309744,
+   0.0,
+   0.0,
+   1.0,
+   0.0,
+   0.0,
+   -0.4309744,
+   0.0,
+   0.9023641,
+   0.0,
+   1.837477,
+   0.7612324,
+   0.8267025,
+   1.0
+  ],
+  "source": "all-open scan (f2)",
+  "bays": [
+   {
+    "id": "cabin",
+    "file": "open/cabin.spz",
+    "when": [
+     "door_fr",
+     "door_rr",
+     "door_fl",
+     "door_rl"
+    ]
+   },
+   {
+    "id": "engine_bay",
+    "file": "open/engine_bay.spz",
+    "when": [
+     "hood"
+    ]
+   },
+   {
+    "id": "trunk_bay",
+    "file": "open/trunk_bay.spz",
+    "when": [
+     "trunk"
+    ]
+   }
+  ]
+ }
 }

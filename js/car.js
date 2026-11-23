@@ -550,6 +550,8 @@ export class CarViewer {
     for (const p of this.panels.values()) {
       p.t = p.target = 0;
       p.pivot.quaternion.identity();
+      p.pivot.visible = true;
+      if (p.openWrap) p.openWrap.visible = false;
     }
   }
 
@@ -634,7 +636,31 @@ export class CarViewer {
         axis: new THREE.Vector3().fromArray(part.axis).normalize(), angle: THREE.MathUtils.degToRad(part.angle),
       });
     });
-    root.add(this.#splatCore());
+    this.core = this.#splatCore();
+    root.add(this.core);
+    // scanned "open" state: each panel's real open shape, plus the cabin / engine bay / trunk space behind it
+    this.bays = [];
+    if (cfg.open) {
+      const openWrap = (mesh) => {
+        const w = new THREE.Group();
+        w.matrixAutoUpdate = false;
+        w.matrix.fromArray(cfg.open.matrix);
+        w.add(mesh);
+        w.visible = false;
+        root.add(w);
+        return w;
+      };
+      const load = async (file) => { const m = new SplatMesh({ url: base + file }); await m.initialized; return m; };
+      const jobs = [];
+      for (const part of cfg.parts) {
+        const panel = this.panels.get(part.id);
+        if (panel && part.open) jobs.push(load(part.open).then((m) => { panel.openWrap = openWrap(m); }).catch(() => {}));
+      }
+      for (const bay of cfg.open.bays || []) {
+        jobs.push(load(bay.file).then((m) => { this.bays.push({ wrap: openWrap(m), when: bay.when }); }).catch(() => {}));
+      }
+      await Promise.all(jobs);
+    }
     this.scan = root;
     this.scanKind = 'splat';
     this.scanScale = new THREE.Vector3(1, 1, 1);
@@ -693,6 +719,8 @@ export class CarViewer {
     this.scan = null;
     this.scanKind = null;
     this.panels = null;
+    this.bays = [];
+    this.core = null;
     for (const o of this.car.children) if (!o.isSprite) o.visible = true;
     for (const p of this.parts.values()) if (p.marker && p.anchor) p.marker.position.copy(p.anchor);
     this.hlGroup.clear();
@@ -826,6 +854,15 @@ export class CarViewer {
       }
     }
     if (this.panels) {
+      let anyOpen = false;
+      for (const p of this.panels.values()) {
+        // fully open: show the scanned open panel instead of the swung closed skin
+        const showOpen = !!p.openWrap && p.target > 0.5 && p.t > 0.97;
+        if (p.openWrap) { p.openWrap.visible = showOpen; p.pivot.visible = !showOpen; }
+        if (p.t > 0.02) anyOpen = true;
+      }
+      for (const b of this.bays || []) b.wrap.visible = b.when.some((id) => (this.panels.get(id)?.t || 0) > 0.05);
+      if (this.core) this.core.visible = !anyOpen; // the black filler would hide the cabin
       for (const p of this.panels.values()) {
         if (Math.abs(p.target - p.t) < 0.001) continue;
         p.t += (p.target - p.t) * 0.09;
