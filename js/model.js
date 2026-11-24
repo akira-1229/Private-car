@@ -10,7 +10,9 @@ import {
   boundaryChains, subsetGeo,
 } from './detail.js';
 import { mergeGeometries } from '../vendor/utils/BufferGeometryUtils.js';
-import { hEmblem, chromeLettering, chromeMaterial, badgeBlackMaterial } from './emblem.js';
+import {
+  hEmblem, chromeLettering, chromeMaterial, badgeBlackMaterial, hybridBadge, hybridBlueMaterial, smokedChromeMaterial,
+} from './emblem.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 
@@ -23,14 +25,15 @@ const R = {
   grille: polyRegion('f', [[0, 0.4], [18.5, 0.403], [21.5, 0.5], [21.6, 0.585], [19.5, 0.628], [0, 0.645]]),
   // narrow dark opening under the plate
   slot: polyRegion('f', [[0, 0.35], [23, 0.352], [24.5, 0.377], [0, 0.377]]),
-  // corner intakes; the top edge slopes down towards the centre (FOG_TOP)
-  fog: polyRegion('f', [[31.5, 0.362], [42.5, 0.366], [45, 0.425], [44.2, 0.488], [32, 0.43]]),
+  // corner intakes; the top edge slopes down towards the centre (FOG_TOP). The outer end runs out
+  // onto the flared bumper corner, as on the real car (the housing reaches almost to the corner)
+  fog: polyRegion('f', [[31.5, 0.362], [43.8, 0.366], [46.2, 0.425], [45.5, 0.49], [32, 0.43]]),
   head: bandRegion('f', [[21.5, 0.604, 0.638], [27, 0.606, 0.66], [34, 0.613, 0.681], [42, 0.628, 0.7], [49, 0.648, 0.716], [55, 0.668, 0.728], [59, 0.688, 0.733]]),
   // tail (angle around x = -1.55)
   tail: bandRegion('r', [[0, 0.944, 0.967], [17, 0.944, 0.969], [23, 0.926, 0.982], [32, 0.908, 0.992], [44, 0.902, 0.998], [54, 0.915, 0.998], [59, 0.935, 0.995]]),
   rearPlate: polyRegion('r', [[0, 0.565], [13.6, 0.568], [14.2, 0.752], [0, 0.756]]),
 };
-const FOG_TOP = [[32, 0.43], [44.2, 0.488]]; // inner -> outer
+const FOG_TOP = [[32, 0.43], [45.5, 0.49]]; // inner -> outer
 const BELT_GLSL = glslLookup(beltAt, -1.4, 0.95, 14);
 const doorTest = (front, sd, withY) => (p) => {
   if (p.z * sd < 0.45) return false;
@@ -80,6 +83,10 @@ export function buildModel({ part, car, bodyColor, plateTex, envMap = null }) {
   // weak for the black paint), on gloss piano black
   const badgeChrome = chromeMaterial(envMap);
   const badgeBlack = badgeBlackMaterial(envMap);
+  const hybridMats = {
+    chrome: badgeChrome, field: smokedChromeMaterial(envMap),
+    blue: hybridBlueMaterial(envMap), blueLight: hybridBlueMaterial(envMap, { light: true }),
+  };
   const darkChrome = new THREE.MeshStandardMaterial({ color: 0x30353b, metalness: 1, roughness: 0.22 });
   const lining = new THREE.MeshStandardMaterial({ color: 0x16171a, roughness: 0.95, side: THREE.BackSide });
   const headliner = new THREE.MeshStandardMaterial({ color: 0x3b3c3f, roughness: 0.95, side: THREE.BackSide });
@@ -254,6 +261,58 @@ export function buildModel({ part, car, bodyColor, plateTex, envMap = null }) {
     const rot = [...o.slice(startIdx), ...o.slice(0, startIdx)];
     const end = rot.findIndex((p, i) => i > 0 && p[0] === 0);
     return rot.slice(0, end + 1);
+  }
+
+  /**
+   * Bends a flat badge (local frame: x right, y up, z out) onto the curved paint so it sits flush
+   * along its whole length, like the real stick-on badges. hitAt(u) returns the surface point and
+   * outward normal at the badge's local x = u. Vertices and normals are moved into that frame;
+   * the result is in the coordinates of the caller's group (= car coordinates).
+   */
+  function conform(badge, hitAt, lift = 0.0004) {
+    badge.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(badge);
+    const N = 16, u0 = box.min.x - 0.005, u1 = box.max.x + 0.005;
+    const st = [];
+    for (let i = 0; i <= N; i++) {
+      const h = hitAt(u0 + ((u1 - u0) * i) / N);
+      if (!h) return null;
+      st.push(h);
+    }
+    // probe normals are per triangle: average neighbours for a smooth bend
+    const nrm = st.map((_, i) => {
+      const n = new THREE.Vector3();
+      for (let k = Math.max(0, i - 2); k <= Math.min(N, i + 2); k++) n.add(st[k].n);
+      return n.normalize();
+    });
+    const up = V(0, 1, 0), P = V(0, 0, 0), n = V(0, 0, 0), ey = V(0, 0, 0), ex = V(0, 0, 0), v = V(0, 0, 0);
+    const frame = (u) => {
+      const f = THREE.MathUtils.clamp(((u - u0) / (u1 - u0)) * N, 0, N - 1e-6), i = Math.floor(f), t = f - i;
+      P.lerpVectors(st[i].p, st[i + 1].p, t);
+      n.lerpVectors(nrm[i], nrm[i + 1], t).normalize();
+      ey.copy(up).addScaledVector(n, -n.dot(up)).normalize();
+      ex.crossVectors(ey, n);
+    };
+    const out = new THREE.Group();
+    out.name = badge.name;
+    badge.traverse((o) => {
+      if (!o.isMesh) return;
+      const geo = o.geometry.clone().applyMatrix4(o.matrixWorld);
+      const pos = geo.attributes.position, nor = geo.attributes.normal;
+      for (let i = 0; i < pos.count; i++) {
+        frame(pos.getX(i));
+        const y = pos.getY(i), z = pos.getZ(i) + lift;
+        v.copy(P).addScaledVector(ey, y).addScaledVector(n, z);
+        const nx = nor.getX(i), ny = nor.getY(i), nz = nor.getZ(i);
+        pos.setXYZ(i, v.x, v.y, v.z);
+        v.set(0, 0, 0).addScaledVector(ex, nx).addScaledVector(ey, ny).addScaledVector(n, nz).normalize();
+        nor.setXYZ(i, v.x, v.y, v.z);
+      }
+      pos.needsUpdate = true; nor.needsUpdate = true;
+      geo.computeBoundingBox(); geo.computeBoundingSphere();
+      out.add(new THREE.Mesh(geo, o.material));
+    });
+    return out;
   }
 
   // =============================================================================================
@@ -702,12 +761,22 @@ export function buildModel({ part, car, bodyColor, plateTex, envMap = null }) {
       badge.lookAt(badge.position.clone().add(bc.n));
       lid.add(badge);
     }
-    const np = probe.back(0.875, 0.36, 0.0);
-    if (np) {
-      const name = chromeLettering('INSIGHT', 0.019, { chrome: badgeChrome, depth: 0.0018 });
-      name.position.copy(np.p).addScaledVector(np.n, 0.0035);
-      name.lookAt(name.position.clone().add(np.n));
-      lid.add(name);
+    // Badges under the tail lamps, on the lid (they swing up with it), placed from photos of the
+    // real car: "INSIGHT" under the LEFT lamp (z < 0), the HYBRID badge under the RIGHT lamp.
+    // Both sit about one letter height under the lamp, with their outer end ~4-5 cm inside the
+    // lid's side cut, and follow the curve of the lid.
+    const BADGE_Y = 0.878;
+    const lidHit = (zc) => (u) => probe.back(BADGE_Y, zc + u, 0);
+    {
+      // raised chrome letters, wide and slightly italic as on the real badge (about 165 x 21 mm)
+      const name = chromeLettering('INSIGHT', 0.021, { chrome: badgeChrome, depth: 0.0022, stroke: 0.2, gap: 0.34, slant: 0.1, fit: 0.165 });
+      const m = conform(name, lidHit(-0.472));
+      if (m) { m.name = 'insightLettering'; lid.add(m); }
+    }
+    {
+      // smaller than the fender badge (115 mm vs 135 mm)
+      const hb = conform(hybridBadge(0.115, hybridMats), lidHit(0.49));
+      if (hb) { hb.name = 'hybridBadgeRear'; lid.add(hb); }
     }
     part('body', lid, null, trunk.inner);
     panels.set('trunk', { pivot: trunk.pivot, label: 'トランク', t: 0, target: 0, axis: V(0, 0, 1), angle: THREE.MathUtils.degToRad(-72) });
@@ -978,6 +1047,15 @@ export function buildModel({ part, car, bodyColor, plateTex, envMap = null }) {
     const extras = new THREE.Group();
     for (const c of [...body.children]) if (!c.userData.shell) extras.add(c);
     body.add(bake(extras));
+  }
+  // HYBRID badge on the LEFT front fender only (as on the owner's car): between the wheel arch
+  // and the front door shut line (x = 0.7), its rear end ~9 cm ahead of the door, about 6.5 cm
+  // under the fender character line. Measured from a side photo of the real car.
+  {
+    const xc = 0.858, yc = creaseY(0.858) - 0.065;
+    // badge local +x = towards the rear on the left side
+    const hb = conform(hybridBadge(0.135, hybridMats), (u) => probe.side(xc - u, yc, 0, -1));
+    if (hb) { hb.name = 'hybridBadgeSide'; body.add(hb); }
   }
   part('body', body, [-0.4, 0.62, 1.0]);
 

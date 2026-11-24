@@ -99,11 +99,23 @@ function sideOffset(x, y) {
  * Plan-view curvature of the nose and the tail: the corners are pulled back so the front face is
  * rounded in plan instead of flat (a straight loft ring would give a boxy bumper).
  */
-export function bowX(x, z) {
+export function bowX(x, z, y = 1) {
   const k = (z / 0.9) ** 2;
-  if (x > 1.55) return x - 0.15 * smooth(ramp(x, 1.55, X_FRONT)) * k;
+  // the lower bumper corners are pulled back less: they stand forward, squarer in plan
+  if (x > 1.55) return x - 0.15 * smooth(ramp(x, 1.55, X_FRONT)) * k * (1 - 0.3 * lowCorner(y));
   if (x < -1.85) return x + 0.075 * smooth(ramp(-x, 1.85, -X_REAR)) * k;
   return x;
+}
+/**
+ * Front bumper corners: on the real car the lower bumper (intakes down to the bumper corners)
+ * flares out to almost the full body width, while the headlight level is tapered in plan. The plan
+ * taper of halfWidth() is relaxed below the headlights, fading out before the headlight cut so the
+ * lamps and the hood keep their place. lowCorner: 1 at bumper / intake height, 0 from y = 0.6 up.
+ */
+function lowCorner(y) { return 1 - smooth(ramp(y, 0.4, 0.6)); }
+export function cornerFlare(x, y) {
+  if (x <= 1.55) return 0;
+  return 0.2 * ((x - 1.55) / 0.7) ** 2 * 0.45 * lowCorner(y);
 }
 const HALF = SEG.bottom + SEG.side + SEG.shoulder + SEG.house + SEG.roof + 1;
 
@@ -160,6 +172,13 @@ function section(x) {
     const t = i / SEG.roof;
     push(quad(r0, [zTop * 0.82, yT + crown * 0.5], [0, yT + crown], t), 'roof');
   }
+  // front bumper corner flare (scaled by z / W so the underside centre stays put)
+  if (x > 1.55) {
+    for (const p of out) {
+      const f = cornerFlare(x, p[1]);
+      if (f > 0) p[0] += f * Math.min(1, (p[0] / W) ** 2);
+    }
+  }
   return out;
 }
 
@@ -197,7 +216,7 @@ export function buildBody() {
     const ring = [...right.map(([z, y, s]) => [z, y, s])];
     for (let i = HALF - 2; i >= 1; i--) ring.push([-right[i][0], right[i][1], right[i][2]]);
     for (const [z, y, s] of ring) {
-      pos.push(bowX(r.x, z), y, z);
+      pos.push(bowX(r.x, z, y), y, z);
       segOf.push(r.cap ? 'cap' : s);
     }
   }
@@ -266,7 +285,7 @@ export function surfacePoint(x, y, off = 0) {
     const d = Math.abs(p[1] - y) + (p[2] === 'bottom' ? 1 : 0);
     if (d < bd) { bd = d; best = p; }
   }
-  return new THREE.Vector3(bowX(x, best[0]), y, best[0] + off);
+  return new THREE.Vector3(bowX(x, best[0], y), y, best[0] + off);
 }
 
 /** Window opening outline on the right side (for the chrome surround). */

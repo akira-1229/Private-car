@@ -202,32 +202,56 @@ const arc = (cx, cy, rx, ry, a0, a1, n = 18) => {
   return out;
 };
 
-/** stroke centre lines of each glyph in a unit box (cap height 1, baseline 0); returns { w, strokes } */
-function glyph(ch, s) {
+/**
+ * stroke centre lines of each glyph in a unit box (cap height 1, baseline 0); returns { w, strokes }.
+ * k widens the letters (1 = the base proportions; the real badges use a wide, extended face).
+ */
+function glyph(ch, s, k = 1) {
   const V2 = (x, y) => new THREE.Vector2(x, y);
   const lo = s / 2, hi = 1 - s / 2; // keep the stroke edges on the baseline / cap height
+  // bowl: from the stem at height yTop round the right-hand side down to the stem at yBot
+  const bowl = (x0, xr, yTop, yBot) => {
+    const ry = (yTop - yBot) / 2, rx = Math.min(ry * 1.15, (xr - x0) * 0.9);
+    return [V2(x0, yTop), ...arc(xr - rx, (yTop + yBot) / 2, rx, ry, 90, -90, 16), V2(x0, yBot)];
+  };
   switch (ch) {
     case 'I': return { w: s, strokes: [[V2(s / 2, 0), V2(s / 2, 1)]] };
+    case 'Y': {
+      const w = 0.86 * k, yJ = 0.46;
+      return { w, strokes: [[V2(s * 0.6, 1 - s * 0.2), V2(w / 2, yJ), V2(w - s * 0.6, 1 - s * 0.2)], [V2(w / 2, yJ + s * 0.4), V2(w / 2, 0)]] };
+    }
+    case 'B': {
+      const w = 0.84 * k, m = 0.53;
+      return { w, strokes: [[V2(s / 2, 0), V2(s / 2, 1)], bowl(s / 2, w - s / 2 - 0.05 * k, hi, m), bowl(s / 2, w - s / 2, m, lo)] };
+    }
+    case 'R': {
+      const w = 0.86 * k, m = 0.47;
+      return { w, strokes: [[V2(s / 2, 0), V2(s / 2, 1)], bowl(s / 2, w - s / 2, hi, m), [V2(w * 0.5, m), V2(w - s * 0.55, s * 0.2)]] };
+    }
+    case 'D': {
+      const w = 0.9 * k;
+      return { w, strokes: [[V2(s / 2, 0), V2(s / 2, 1)], bowl(s / 2, w - s / 2, hi, lo)] };
+    }
     case 'N': {
-      const w = 0.86;
+      const w = 0.86 * k;
       return { w, strokes: [[V2(s / 2, 0), V2(s / 2, 1)], [V2(s / 2, 1), V2(w - s / 2, 0)], [V2(w - s / 2, 0), V2(w - s / 2, 1)]] };
     }
     case 'H': {
-      const w = 0.86;
+      const w = 0.86 * k;
       return { w, strokes: [[V2(s / 2, 0), V2(s / 2, 1)], [V2(w - s / 2, 0), V2(w - s / 2, 1)], [V2(s / 2, 0.5), V2(w - s / 2, 0.5)]] };
     }
     case 'T': {
-      const w = 0.84;
+      const w = 0.84 * k;
       return { w, strokes: [[V2(0, hi), V2(w, hi)], [V2(w / 2, 0), V2(w / 2, hi)]] };
     }
     case 'S': {
-      const w = 0.8, rx = (w - s) / 2, cx = w / 2, ry = (hi - lo) / 4;
+      const w = 0.8 * k, rx = (w - s) / 2, cx = w / 2, ry = (hi - lo) / 4;
       const up = arc(cx, lo + 3 * ry, rx, ry, 25, 270, 22);
       const dn = arc(cx, lo + ry, rx, ry, 90, -155, 22);
       return { w, strokes: [[...up, ...dn.slice(1)]] };
     }
     case 'G': {
-      const w = 0.92, rx = (w - s) / 2, cx = w / 2, cy = 0.5, ry = (hi - lo) / 2;
+      const w = 0.92 * k, rx = (w - s) / 2, cx = w / 2, cy = 0.5, ry = (hi - lo) / 2;
       return {
         w,
         strokes: [
@@ -242,25 +266,150 @@ function glyph(ch, s) {
 }
 
 /**
- * Raised chrome lettering, centred on the origin. cap: letter height (m).
- * Built from extruded strokes with a small chamfer so the edges catch the light.
+ * Outline shapes of a line of stroked letters, centred on the origin (cap height `cap`, m).
+ * slant: italic shear (x += slant * y); widen: letter width factor; fit: if set, the letters are
+ * widened / narrowed so the whole line is exactly this wide.
  */
-export function chromeLettering(text, cap, { chrome, stroke = 0.13, gap = 0.42, depth = 0.0016 } = {}) {
+function letterShapes(text, cap, { stroke = 0.13, gap = 0.42, slant = 0, widen = 1, fit = 0 } = {}) {
   const s = stroke;
+  const measure = (k) => [...text].map((ch) => glyph(ch, s, k));
+  const span = (gl) => gl.reduce((a, g) => a + g.w, 0) + gap * (gl.length - 1) + slant;
+  let k = widen;
+  if (fit > 0) {
+    // the width is linear in k: solve span(k) = fit / cap
+    const a = span(measure(0)), b = span(measure(1)) - a;
+    k = THREE.MathUtils.clamp((fit / cap - a) / b, 0.6, 2.2);
+  }
+  const glyphs = measure(k);
+  const total = span(glyphs);
   const shapes = [];
   let x = 0;
-  const glyphs = [...text].map((ch) => glyph(ch, s));
-  const total = glyphs.reduce((a, gl) => a + gl.w, 0) + gap * (glyphs.length - 1);
   for (const gl of glyphs) {
     for (const st of gl.strokes) {
-      const pts = strokeOutline(st, s).map((p) => new THREE.Vector2((p.x + x - total / 2) * cap, (p.y - 0.5) * cap));
+      const pts = strokeOutline(st, s).map((p) => new THREE.Vector2((p.x + x + slant * p.y - total / 2) * cap, (p.y - 0.5) * cap));
       shapes.push(new THREE.Shape(pts));
     }
     x += gl.w + gap;
   }
+  return { shapes, w: total * cap };
+}
+
+/**
+ * Raised chrome lettering, centred on the origin. cap: letter height (m).
+ * Built from extruded strokes with a small chamfer so the edges catch the light.
+ * `face`: optional material for the letter faces (the chamfers and sides stay chrome), e.g. the
+ * blue HYBRID lettering.
+ */
+export function chromeLettering(text, cap, { chrome, face = null, stroke = 0.13, gap = 0.42, depth = 0.0016, slant = 0, widen = 1, fit = 0 } = {}) {
+  const { shapes, w } = letterShapes(text, cap, { stroke, gap, slant, widen, fit });
   const bevel = cap * 0.035;
   const geo = extrude(shapes, Math.max(0.0002, depth - 2 * bevel), bevel, 2);
-  const mesh = new THREE.Mesh(geo, chrome);
-  mesh.userData.size = { w: total * cap, h: cap };
-  return mesh;
+  if (!face) {
+    const mesh = new THREE.Mesh(geo, chrome);
+    mesh.userData.size = { w, h: cap };
+    return mesh;
+  }
+  // coloured faces with chrome chamfers: split the extrusion by its groups
+  // (0 = front / back caps, 1 = sides and chamfers) into two single-material meshes, since the
+  // viewer clones and highlights one material per mesh
+  const grp = new THREE.Group();
+  grp.add(new THREE.Mesh(geometryOfGroup(geo, 0), face), new THREE.Mesh(geometryOfGroup(geo, 1), chrome));
+  grp.userData.size = { w, h: cap };
+  return grp;
+}
+
+/** the triangles of one material group of a non-indexed geometry, as a geometry of their own */
+function geometryOfGroup(geo, materialIndex) {
+  const out = new THREE.BufferGeometry();
+  for (const [name, attr] of Object.entries(geo.attributes)) {
+    const k = attr.itemSize, src = attr.array, parts = [];
+    for (const gr of geo.groups) if (gr.materialIndex === materialIndex) parts.push(src.subarray(gr.start * k, (gr.start + gr.count) * k));
+    const arr = new Float32Array(parts.reduce((a, p) => a + p.length, 0));
+    let o = 0;
+    for (const p of parts) { arr.set(p, o); o += p.length; }
+    out.setAttribute(name, new THREE.BufferAttribute(arr, k));
+  }
+  return out;
+}
+
+// ------------------------------------------------------------------------------------------
+// HYBRID badge (front fender, trunk lid)
+// ------------------------------------------------------------------------------------------
+/** metallic Honda "hybrid blue" for the badge lettering and the square mark */
+export function hybridBlueMaterial(envMap, { light = false } = {}) {
+  const m = new THREE.MeshPhysicalMaterial({
+    color: light ? 0x7cc4ff : 0x1f4ee6, metalness: 0.55, roughness: 0.2, clearcoat: 1, clearcoatRoughness: 0.04,
+    emissive: light ? 0x1a3a66 : 0x07164a, emissiveIntensity: 0.6,
+  });
+  if (envMap) { m.envMap = envMap; m.envMapIntensity = 1.1; }
+  return m;
+}
+/** dark smoked chrome for the inset field of the HYBRID plate */
+export function smokedChromeMaterial(envMap) {
+  const m = new THREE.MeshStandardMaterial({ color: 0x272c34, metalness: 1, roughness: 0.16 });
+  if (envMap) { m.envMap = envMap; m.envMapIntensity = 1.2; }
+  return m;
+}
+
+/** rounded rectangle outline (counter-clockwise), centred on the origin */
+function roundRect(w, h, r, n = 6) {
+  const pts = [];
+  const c = [[w / 2 - r, -h / 2 + r, -90], [w / 2 - r, h / 2 - r, 0], [-w / 2 + r, h / 2 - r, 90], [-w / 2 + r, -h / 2 + r, 180]];
+  for (const [cx, cy, a0] of c) pts.push(...arc(cx, cy, r, r, a0, a0 + 90, n));
+  return pts;
+}
+
+/**
+ * HYBRID badge as on the ZE4: a slim chrome plate with a dark inset field, the blue square mark
+ * (with its light-blue arc) on the left and slightly italic blue "HYBRID" letters with chrome
+ * edges. All solid, bevelled geometry.
+ * @param {number} w  plate width (m); the plate is 0.15 w tall
+ * @param {object} o  { chrome, field, blue, blueLight }
+ */
+export function hybridBadge(w, { chrome, field, blue, blueLight } = {}) {
+  const h = w * 0.15;
+  const g = new THREE.Group();
+  g.name = 'hybridBadge';
+  const rim = h * 0.1; // chrome rim width
+  const relief = h * 0.13; // how far the plate stands off the paint
+  const bevel = h * 0.035;
+
+  // chrome rim: rounded plate outline with the field cut out; the rim face is crowned so the
+  // highlight runs along its length
+  const outer = roundRect(w, h, h * 0.22);
+  const inner = roundRect(w - 2 * rim, h - 2 * rim, h * 0.14);
+  const rimShape = new THREE.Shape(outer);
+  rimShape.holes.push(new THREE.Path(inner.slice().reverse()));
+  const rimGeo = extrude(rimShape, relief - 2 * bevel, bevel, 3);
+  shapeFront(rimGeo, (x, y) => new THREE.Vector2(Math.sign(x) * Math.max(0, Math.abs(x) - (w / 2 - h)) / h * 0.5, y / (h / 2) * 0.45));
+  g.add(new THREE.Mesh(rimGeo, chrome));
+
+  // dark field, set a little below the rim
+  const fieldGeo = extrude(new THREE.Shape(inner), relief * 0.35, relief * 0.08, 1);
+  g.add(new THREE.Mesh(fieldGeo, field));
+  const zField = relief * 0.35 + relief * 0.16;
+
+  // square mark at the left end: blue tile with a light-blue arc (open to the right)
+  const sq = h - 2 * rim - h * 0.16;
+  const sqX = -w / 2 + rim + h * 0.1 + sq / 2;
+  const tile = new THREE.Mesh(extrude(new THREE.Shape(roundRect(sq, sq, sq * 0.12)), relief * 0.35, relief * 0.08, 1), blue);
+  tile.position.set(sqX, 0, zField - relief * 0.05);
+  g.add(tile);
+  const arcPts = arc(sqX + sq * 0.12, 0, sq * 0.3, sq * 0.3, 70, 290, 20);
+  const arcGeo = extrude(new THREE.Shape(strokeOutline(arcPts, sq * 0.16)), relief * 0.1, relief * 0.05, 1);
+  const arcMesh = new THREE.Mesh(arcGeo, blueLight);
+  arcMesh.position.z = zField - relief * 0.05 + relief * 0.5;
+  g.add(arcMesh);
+
+  // italic blue letters filling the rest of the field
+  const x0 = sqX + sq / 2 + h * 0.2, x1 = w / 2 - rim - h * 0.22;
+  const cap = (h - 2 * rim) * 0.7;
+  const letters = chromeLettering('HYBRID', cap, {
+    chrome, face: blue, stroke: 0.25, gap: 0.28, slant: 0.22, depth: relief * 0.6, fit: x1 - x0,
+  });
+  letters.position.set((x0 + x1) / 2, 0, zField - relief * 0.08);
+  g.add(letters);
+
+  g.userData.size = { w, h, depth: relief };
+  return g;
 }
