@@ -117,6 +117,7 @@ export class CarViewer {
       car: this.car,
       bodyColor,
       plateTex: this.plateTex,
+      envMap: this.envTex,
       part: (id, obj, anchor, parent) => this.#part(id, obj, anchor || null, parent),
     });
     this.panels = panels;

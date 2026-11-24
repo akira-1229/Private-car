@@ -6,9 +6,10 @@ import * as THREE from 'three';
 import { buildBody, dloOutline, GLASS, WHEELS, beltAt, topAt, creaseY } from './body.js';
 import {
   Probe, sweep, gridGeo, bake, mirrored, polyRegion, bandRegion, exprRegion, glslLookup, clipMaterial,
-  spline2, badgeTexture, textTexture, treadBump, sidewallTexture, labelTexture,
+  spline2, treadBump, sidewallTexture, labelTexture,
   boundaryChains, subsetGeo,
 } from './detail.js';
+import { hEmblem, chromeLettering, chromeMaterial, badgeBlackMaterial } from './emblem.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 
@@ -57,7 +58,7 @@ const TRUNK = exprRegion('P.x < -1.9 && az < 0.6 && P.y > 0.8', (p) => p.x < -1.
  * Builds the car. `part(id, object, anchor, parent)` registers a tappable part (see CarViewer).
  * Returns { panels } — the doors, hood and trunk that open on a double tap.
  */
-export function buildModel({ part, car, bodyColor, plateTex }) {
+export function buildModel({ part, car, bodyColor, plateTex, envMap = null }) {
   // ---------------- materials ----------------
   // deep pearl black: an almost non-metallic, slightly rough base under a mirror-like clear coat.
   // The clear coat carries the sharp highlights that draw the press lines; the base adds only a
@@ -74,6 +75,10 @@ export function buildModel({ part, car, bodyColor, plateTex }) {
   const gapMat = new THREE.MeshBasicMaterial({ color: 0x020203 });
   const voidMat = new THREE.MeshBasicMaterial({ color: 0x010101, side: THREE.DoubleSide });
   const chrome = new THREE.MeshStandardMaterial({ color: 0xeef1f4, metalness: 1, roughness: 0.06 });
+  // badges: polished chrome with its own, stronger reflections (the scene-wide environment is kept
+  // weak for the black paint), on gloss piano black
+  const badgeChrome = chromeMaterial(envMap);
+  const badgeBlack = badgeBlackMaterial(envMap);
   const darkChrome = new THREE.MeshStandardMaterial({ color: 0x30353b, metalness: 1, roughness: 0.22 });
   const lining = new THREE.MeshStandardMaterial({ color: 0x16171a, roughness: 0.95, side: THREE.BackSide });
   const headliner = new THREE.MeshStandardMaterial({ color: 0x3b3c3f, roughness: 0.95, side: THREE.BackSide });
@@ -406,23 +411,13 @@ export function buildModel({ part, car, bodyColor, plateTex }) {
   const frontBaked = bake(frontR);
   front.add(frontBaked, mirrored(frontBaked));
 
-  // centre badge (simplified H in an oval) on the top of the grille
+  // centre H emblem on the top of the grille: solid chrome frame + H with chamfered edges on a
+  // recessed piano-black field, mounted on a black base that reaches back into the slats
   {
-    const c = probe.front(0.588, 0, 0.016);
-    const badge = new THREE.Group();
-    const face = new THREE.Mesh(new THREE.CircleGeometry(0.05, 40), new THREE.MeshStandardMaterial({ map: badgeTexture(), metalness: 0.9, roughness: 0.18 }));
-    face.scale.y = 0.8;
-    badge.add(face);
-    const rim = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.004, 10, 48), chrome);
-    rim.scale.y = 0.8;
-    badge.add(rim);
-    const back = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.012, 40), piano);
-    back.rotation.x = Math.PI / 2;
-    back.scale.set(1, 1, 0.8);
-    back.position.z = -0.007;
-    badge.add(back);
-    badge.position.copy(c.p);
-    badge.lookAt(c.p.clone().add(V(1, 0, 0)));
+    const c = probe.front(0.588, 0, 0.0);
+    const badge = hEmblem(0.106, { chrome: badgeChrome, black: badgeBlack, baseDepth: 0.024 });
+    badge.position.copy(c.p).add(V(0.012, 0, 0));
+    badge.lookAt(badge.position.clone().add(V(1, 0, 0)));
     front.add(badge);
   }
   // front plate on a piano-black holder over the lower middle of the grille
@@ -666,25 +661,24 @@ export function buildModel({ part, car, bodyColor, plateTex }) {
     }
     // fixed axes: u = backwards, v = up
     lid.add(new THREE.Mesh(sweep(sp, [[-0.004, -0.004], [0.012, -0.004], [0.026, 0.008], [0.02, 0.016], [-0.03, 0.012]], { axes: [V(-1, 0, 0), V(0, 1, 0)] }), piano));
-    // chrome garnish bar + simplified badge + model lettering
+    // chrome garnish bar + H emblem + raised model lettering
     const gar = [];
     for (let a = -27; a <= 27; a += 3) { const h = tailP(a, 0.835, 0.002); if (h) gar.push(h); }
     lid.add(new THREE.Mesh(sweep(gar, [[-0.002, -0.008], [0.004, -0.007], [0.005, 0], [0.004, 0.007], [-0.002, 0.008]]), chrome));
-    const bc = probe.back(0.885, 0, 0.008);
+    const bc = probe.back(0.885, 0, 0.0);
     if (bc) {
-      const badge = new THREE.Mesh(new THREE.CircleGeometry(0.042, 36), new THREE.MeshStandardMaterial({ map: badgeTexture(), metalness: 0.9, roughness: 0.18 }));
-      badge.scale.y = 0.8;
-      badge.position.copy(bc.p);
-      badge.lookAt(bc.p.clone().add(V(-1, 0, 0)));
-      const rim = new THREE.Mesh(new THREE.TorusGeometry(0.042, 0.0035, 8, 40), chrome);
-      rim.scale.y = 0.8;
-      rim.position.copy(badge.position);
-      rim.quaternion.copy(badge.quaternion);
-      lid.add(badge, rim);
+      const badge = hEmblem(0.088, { chrome: badgeChrome, black: badgeBlack, baseDepth: 0.006 });
+      badge.position.copy(bc.p).addScaledVector(bc.n, 0.005);
+      badge.lookAt(badge.position.clone().add(bc.n));
+      lid.add(badge);
     }
-    const name = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 0.0375), new THREE.MeshStandardMaterial({ map: textTexture('INSIGHT'), transparent: true, metalness: 0.9, roughness: 0.2, depthWrite: false }));
-    const np = probe.back(0.875, 0.36, 0.003);
-    if (np) { name.position.copy(np.p); name.lookAt(np.p.clone().add(np.n)); lid.add(name); }
+    const np = probe.back(0.875, 0.36, 0.0);
+    if (np) {
+      const name = chromeLettering('INSIGHT', 0.019, { chrome: badgeChrome, depth: 0.0018 });
+      name.position.copy(np.p).addScaledVector(np.n, 0.0035);
+      name.lookAt(name.position.clone().add(np.n));
+      lid.add(name);
+    }
     part('body', lid, null, trunk.inner);
     panels.set('trunk', { pivot: trunk.pivot, label: 'トランク', t: 0, target: 0, axis: V(0, 0, 1), angle: THREE.MathUtils.degToRad(-72) });
     trunk.pivot.userData.panelId = 'trunk';

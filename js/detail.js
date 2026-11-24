@@ -412,44 +412,6 @@ function canvasTex(w, h, draw, { repeat = false, srgb = true } = {}) {
   return t;
 }
 
-/** simplified oval badge with an "H"-like mark (not the real logo) */
-export function badgeTexture() {
-  return canvasTex(256, 200, (c, w, h) => {
-    c.fillStyle = '#0b0d10';
-    c.fillRect(0, 0, w, h);
-    const g = c.createLinearGradient(0, 0, 0, h);
-    g.addColorStop(0, '#ffffff'); g.addColorStop(0.45, '#c8ced6'); g.addColorStop(0.55, '#8f969f'); g.addColorStop(1, '#f2f4f7');
-    c.strokeStyle = g;
-    c.lineWidth = 14;
-    c.beginPath();
-    c.ellipse(w / 2, h / 2, w / 2 - 12, h / 2 - 12, 0, 0, Math.PI * 2);
-    c.stroke();
-    c.fillStyle = g;
-    // two slightly flared uprights and a crossbar
-    const top = h * 0.22, bot = h * 0.78, cx = w / 2;
-    c.beginPath();
-    c.moveTo(cx - 62, top); c.lineTo(cx - 34, top); c.lineTo(cx - 38, bot); c.lineTo(cx - 56, bot); c.closePath();
-    c.moveTo(cx + 62, top); c.lineTo(cx + 34, top); c.lineTo(cx + 38, bot); c.lineTo(cx + 56, bot); c.closePath();
-    c.fill();
-    c.fillRect(cx - 40, h * 0.45, 80, 18);
-  });
-}
-
-/** chrome lettering on a transparent background */
-export function textTexture(text, { w = 512, h = 96, font = '700 70px "Helvetica Neue", Arial, sans-serif', spacing = 10 } = {}) {
-  return canvasTex(w, h, (c) => {
-    c.clearRect(0, 0, w, h);
-    const g = c.createLinearGradient(0, 0, 0, h);
-    g.addColorStop(0, '#ffffff'); g.addColorStop(0.5, '#9aa1aa'); g.addColorStop(1, '#eef1f4');
-    c.fillStyle = g;
-    c.font = font;
-    c.textBaseline = 'middle';
-    if ('letterSpacing' in c) c.letterSpacing = `${spacing}px`;
-    c.textAlign = 'center';
-    c.fillText(text, w / 2, h / 2 + 2, w - 10);
-  });
-}
-
 /** tread pattern (bump map) wrapped around the tyre: 4 grooves + lateral sipes */
 export function treadBump() {
   const t = canvasTex(1024, 128, (c, w, h) => {
