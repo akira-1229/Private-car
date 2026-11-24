@@ -9,6 +9,7 @@ import {
   spline2, treadBump, sidewallTexture, labelTexture,
   boundaryChains, subsetGeo,
 } from './detail.js';
+import { mergeGeometries } from '../vendor/utils/BufferGeometryUtils.js';
 import { hEmblem, chromeLettering, chromeMaterial, badgeBlackMaterial } from './emblem.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
@@ -662,9 +663,38 @@ export function buildModel({ part, car, bodyColor, plateTex, envMap = null }) {
     // fixed axes: u = backwards, v = up
     lid.add(new THREE.Mesh(sweep(sp, [[-0.004, -0.004], [0.012, -0.004], [0.026, 0.008], [0.02, 0.016], [-0.03, 0.012]], { axes: [V(-1, 0, 0), V(0, 1, 0)] }), piano));
     // chrome garnish bar + H emblem + raised model lettering
+    // The garnish is a low, rounded chrome strip clipped flat onto the lid: its back sits 1 mm into
+    // the paint (no gap at the edges) and the crown stands 4 mm proud. Along this path (a rising =
+    // +z) the sweep's v axis points down, so the profile runs bottom -> crown -> top to keep the
+    // triangles facing outwards; the reverse order culled the outer faces and left only the flat
+    // back face showing, which z-fought with the paint (the broken white streak under the badge).
     const gar = [];
-    for (let a = -27; a <= 27; a += 3) { const h = tailP(a, 0.835, 0.002); if (h) gar.push(h); }
-    lid.add(new THREE.Mesh(sweep(gar, [[-0.002, -0.008], [0.004, -0.007], [0.005, 0], [0.004, 0.007], [-0.002, 0.008]]), chrome));
+    for (let a = -27; a <= 27; a += 3) { const h = tailP(a, 0.835, 0); if (h) gar.push(h); }
+    const garProfile = [
+      [-0.001, 0.0072], [0.0015, 0.0068], [0.003, 0.0055], [0.0038, 0.003], [0.004, 0],
+      [0.0038, -0.003], [0.003, -0.0055], [0.0015, -0.0068], [-0.001, -0.0072],
+    ];
+    const garGeo = sweep(gar, garProfile);
+    // close both ends of the strip with flat caps (otherwise the hollow section shows at an angle)
+    {
+      const M = garProfile.length, P = garGeo.attributes.position, N = P.count / M;
+      const ring = (i) => Array.from({ length: M }, (_, j) => new THREE.Vector3().fromBufferAttribute(P, i * M + j));
+      const mid = (r) => r.reduce((s, v) => s.add(v), new THREE.Vector3()).divideScalar(r.length);
+      const pos = [], idx = [];
+      for (const [i, inner] of [[0, 1], [N - 1, N - 2]]) {
+        const r = ring(i), out = mid(r).sub(mid(ring(inner))), base = pos.length / 3;
+        r.forEach((v) => pos.push(v.x, v.y, v.z));
+        for (let j = 1; j < M - 1; j++) {
+          const nrm = new THREE.Vector3().subVectors(r[j], r[0]).cross(new THREE.Vector3().subVectors(r[j + 1], r[0]));
+          idx.push(...(nrm.dot(out) > 0 ? [base, base + j, base + j + 1] : [base, base + j + 1, base + j]));
+        }
+      }
+      const caps = new THREE.BufferGeometry();
+      caps.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      caps.setIndex(idx);
+      caps.computeVertexNormals();
+      lid.add(new THREE.Mesh(mergeGeometries([garGeo, caps]), chrome));
+    }
     const bc = probe.back(0.885, 0, 0.0);
     if (bc) {
       const badge = hEmblem(0.088, { chrome: badgeChrome, black: badgeBlack, baseDepth: 0.006 });
