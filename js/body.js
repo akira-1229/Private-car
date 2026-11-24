@@ -70,7 +70,8 @@ export function bottomAt(x) {
 
 // segment sample counts for one half of a cross-section (bottom centre -> top centre)
 // the side band carries 4 extra samples packed around the character line so the crease stays sharp
-const SEG = { bottom: 6, side: 22, shoulder: 5, house: 10, roof: 14 };
+// roof also carries the hood: dense enough to resolve the two soft hood ridges (hoodRelief)
+const SEG = { bottom: 6, side: 22, shoulder: 5, house: 10, roof: 30 };
 const CREASE_PTS = [-0.016, -0.006, 0.006, 0.016];
 
 // fade in / out helper
@@ -113,9 +114,31 @@ export function bowX(x, z, y = 1) {
  * lamps and the hood keep their place. lowCorner: 1 at bumper / intake height, 0 from y = 0.6 up.
  */
 function lowCorner(y) { return 1 - smooth(ramp(y, 0.4, 0.6)); }
+export const CORNER_FLARE = 0.55; // share of the plan taper given back at bumper height
 export function cornerFlare(x, y) {
   if (x <= 1.55) return 0;
-  return 0.2 * ((x - 1.55) / 0.7) ** 2 * 0.45 * lowCorner(y);
+  return 0.2 * ((x - 1.55) / 0.7) ** 2 * CORNER_FLARE * lowCorner(y);
+}
+
+/**
+ * Hood relief: on the real ZE4 the hood carries two soft ridges running from the cowl towards the
+ * inner ends of the headlights. The centre between them is very slightly sunk and the panel falls
+ * away gently outside them. Built into the loft (the hood panel is the 'roof' band ahead of the
+ * windshield), so the ridges are real surface and swing up with the hood.
+ * Returns the vertical offset at (x, |z|) in metres (a few millimetres at most).
+ */
+export function hoodRidgeZ(x) { return 0.285 + 0.06 * smooth(ramp(x, 0.9, 2.05)); }
+export function hoodRelief(x, z) {
+  const fade = smooth(ramp(x, 0.8, 1.0)) * (1 - smooth(ramp(x, 1.95, 2.13)));
+  if (fade <= 0) return 0;
+  const az = Math.abs(z), zr = hoodRidgeZ(x);
+  const d = az - zr;
+  // ridge: steeper on the inside (reads as a line), long soft fall-off outside
+  const sig = d < 0 ? 0.026 : 0.07;
+  const ridge = 0.0045 * Math.exp(-(d * d) / (2 * sig * sig));
+  // shallow valley between the ridges
+  const valley = -0.0032 * (1 - smooth(Math.min(1, az / (zr - 0.02))));
+  return fade * (ridge + valley);
 }
 const HALF = SEG.bottom + SEG.side + SEG.shoulder + SEG.house + SEG.roof + 1;
 
@@ -170,7 +193,9 @@ function section(x) {
   const crown = h3 > 0.05 ? 0.0 : 0.03;
   for (let i = 0; i <= SEG.roof; i++) {
     const t = i / SEG.roof;
-    push(quad(r0, [zTop * 0.82, yT + crown * 0.5], [0, yT + crown], t), 'roof');
+    const q = quad(r0, [zTop * 0.82, yT + crown * 0.5], [0, yT + crown], t);
+    if (x > GLASS.windshield[1]) q[1] += hoodRelief(x, q[0]);
+    push(q, 'roof');
   }
   // front bumper corner flare (scaled by z / W so the underside centre stays put)
   if (x > 1.55) {

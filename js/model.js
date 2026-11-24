@@ -425,18 +425,33 @@ export function buildModel({ part, car, bodyColor, plateTex, envMap = null }) {
       const fy0 = Math.min(...F.pts.map((p) => p[1]));
       for (let i = 0; i < 4; i++) {
         const drop = 0.014 + i * 0.022;
-        // slat line parallel to the top edge, clipped to the opening
+        // slat line parallel to the top edge, clipped to the opening. The ends stop just inside the
+        // satin surround (no overrun into the wall): the outer end sits on the flared bumper corner,
+        // which wraps back, so any overrun there pokes out of the paint.
         const line = [];
-        for (let k = 0; k <= 24; k++) {
-          const a = ia - 1 + ((oa - ia + 2) * k) / 24;
+        for (let k = 0; k <= 48; k++) {
+          const a = ia - 1 + ((oa - ia + 2) * k) / 48;
           const y = yTop(a) - drop;
-          if (y < fy0 + 0.006) continue;
+          if (y < fy0 + 0.008) continue;
           const s = spanAt(F, y);
-          if (s && a >= s[0] - 0.3 && a <= s[1] + 0.3) line.push([a, y]);
+          if (s && a >= s[0] + 0.35 && a <= s[1] - 0.45) line.push([a, y]);
         }
-        if (line.length < 4) continue;
-        const m = slat(line, 0.01, barMain.map(([u, v]) => [u * 0.8, v * 0.75]), slatMat);
-        if (m) frontR.add(m);
+        if (line.length < 6) continue;
+        // the bar follows the curving corner instead of running straight past it (a long normal
+        // average keeps the inner-end direction and lets the outer end stick out). Normals come
+        // from the path itself (plan tangent x up), which is smooth, rather than from single
+        // triangles, which would make the bar wobble.
+        const f = line.map(([a, y]) => nose(a, y, -0.01)).filter(Boolean);
+        if (f.length < 6) continue;
+        const ny = f.reduce((acc, h) => acc + h.n.y, 0) / f.length;
+        const up = V(0, 1, 0);
+        const frames = f.map((h, k) => {
+          const t = f[Math.min(f.length - 1, k + 2)].p.clone().sub(f[Math.max(0, k - 2)].p).setY(0);
+          const n = new THREE.Vector3().crossVectors(t, up).normalize();
+          if (n.dot(h.n) < 0) n.negate();
+          return { p: h.p, n: n.addScaledVector(up, ny).normalize() };
+        });
+        frontR.add(new THREE.Mesh(sweep(frames, barMain.map(([u, v]) => [u * 0.8, v * 0.75]), { closedProfile: true, smoothN: 1 }), slatMat));
         if (i === 0) {
           // 4 LED fog lamps sitting on the top slat, inner half
           for (const t of [0.34, 0.45, 0.56, 0.67]) {
@@ -466,7 +481,7 @@ export function buildModel({ part, car, bodyColor, plateTex, envMap = null }) {
     if (lip.length > 4) {
       frontR.add(new THREE.Mesh(sweep(lip, [[0, 0.004], [0.028, 0.0], [0.034, -0.01], [0.022, -0.026], [-0.004, -0.028]], { closedProfile: true }), piano));
     }
-    // bumper corner air-curtain groove and the hood press lines are on the paint (see below)
+    // bumper corner air-curtain groove is on the paint (see below); the hood ridges are in the loft
   }
   const frontBaked = bake(frontR);
   front.add(frontBaked, mirrored(frontBaked));
@@ -566,7 +581,7 @@ export function buildModel({ part, car, bodyColor, plateTex, envMap = null }) {
   part('headlight', heads, [2.28, 0.74, 0.58]);
 
   // =============================================================================================
-  // HOOD (opens on its rear hinge) with two press lines
+  // HOOD (opens on its rear hinge); its two soft ridges are in the body loft
   // =============================================================================================
   const panels = new Map();
   const pivotAt = (hinge) => {
@@ -586,16 +601,8 @@ export function buildModel({ part, car, bodyColor, plateTex, envMap = null }) {
     const hl = new THREE.Mesh(g.hood, lining);
     hl.userData.noGlow = true;
     hood.add(hl);
-    // two raised press lines running from the cowl to the headlights
-    for (const sd of [1, -1]) {
-      const fr = [];
-      for (let x = 0.86; x <= 2.06; x += 0.04) {
-        const z = sd * (0.27 + 0.07 * ((x - 0.86) / 1.2) ** 1.5);
-        const h = probe.top(x, z, 0);
-        if (h) fr.push(h);
-      }
-      hood.add(new THREE.Mesh(sweep(fr, [[-0.0005, -0.016], [0.0028, -0.002], [0.0035, 0], [0.0028, 0.002], [-0.0005, 0.02]], { closedProfile: false }), paintPlain));
-    }
+    // the two soft hood ridges are part of the loft surface itself (body.js hoodRelief), so they
+    // belong to this panel and swing up with it
     part('engine', hood, [1.5, 0.98, 0], inner);
     panels.set('hood', { pivot, label: 'ボンネット', t: 0, target: 0, axis: V(0, 0, 1), angle: THREE.MathUtils.degToRad(40) });
     pivot.userData.panelId = 'hood';
