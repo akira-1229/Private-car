@@ -30,7 +30,9 @@ const R = {
   fog: polyRegion('f', [[31.5, 0.362], [43.8, 0.366], [46.2, 0.425], [45.5, 0.49], [32, 0.43]]),
   head: bandRegion('f', [[21.5, 0.604, 0.638], [27, 0.606, 0.66], [34, 0.613, 0.681], [42, 0.628, 0.7], [49, 0.648, 0.716], [55, 0.668, 0.728], [59, 0.688, 0.733]]),
   // tail (angle around x = -1.55)
-  tail: bandRegion('r', [[0, 0.944, 0.967], [17, 0.944, 0.969], [23, 0.926, 0.982], [32, 0.908, 0.992], [44, 0.902, 0.998], [54, 0.915, 0.998], [59, 0.935, 0.995]]),
+  // tail lamps: wedge from a pointed inner tip on the lid (top edge almost level, bottom edge
+  // dropping outwards) to the rounded outer end on the body corner
+  tail: bandRegion('r', [[16, 0.979, 0.984], [19, 0.963, 0.987], [24, 0.937, 0.99], [30, 0.906, 0.992], [35.5, 0.878, 0.994], [42, 0.872, 0.996], [50, 0.876, 0.998], [56, 0.89, 0.998], [60, 0.92, 0.995]]),
   rearPlate: polyRegion('r', [[0, 0.565], [13.6, 0.568], [14.2, 0.752], [0, 0.756]]),
 };
 const FOG_TOP = [[32, 0.43], [45.5, 0.49]]; // inner -> outer
@@ -795,68 +797,111 @@ export function buildModel({ part, car, bodyColor, plateTex, envMap = null }) {
   }
 
   // =============================================================================================
-  // TAIL LAMPS: full-width LED line across the lid, C-shaped LED units in the corners
+  // TAIL LAMPS (from close-up photos of the real car): each side is one wedge-shaped unit split at
+  // the trunk cut into a lid part and a body (corner) part. The top edge runs almost level, the
+  // bottom edge climbs towards a pointed inner tip on the lid. Inside: a thick red light band along
+  // the top and a double red band along the bottom over a dark smoked ground; a clear reverse lamp
+  // in the middle of the lid part; in the corner part the bands join at the outer end (C shape)
+  // round a red reflector, with the clear / amber turn signal above the upper band.
   // =============================================================================================
   {
     const T = R.tail;
+    const A_TIP = T.stops[0][0], A_END = T.stops[T.stops.length - 1][0];
+    const depth = 0.026;
     // angle where the lamp crosses the trunk cut (|z| = 0.6)
-    let split = 30;
-    for (let a = 20; a < 50; a += 0.25) { const h = tailP(a, (T.ylo(a) + T.yhi(a)) / 2, 0); if (h && Math.abs(h.p.z) >= 0.6) { split = a; break; } }
-    const build = (a0, a1, withCorner) => {
-      const grp = new THREE.Group();
-      const depth = 0.024;
-      const { rows } = bandRows(T, -depth, a0, a1, 4, Math.max(6, Math.round((a1 - a0) * 1.2)));
-      grp.add(new THREE.Mesh(gridGeo(rows), tailHousing));
-      const { rows: lens } = bandRows(T, 0.003, a0, a1, 4, Math.max(6, Math.round((a1 - a0) * 1.2)));
-      const lm = new THREE.Mesh(gridGeo(lens), tailLens);
-      lm.renderOrder = 3;
-      lm.userData.keep = true;
-      grp.add(lm);
-      // continuous LED light guide through the middle of the lamp
-      const mid = [];
-      for (let a = a0; a <= a1 + 1e-6; a += 1) { const h = tailP(a, (T.ylo(a) + T.yhi(a)) / 2 + 0.002, -0.012); if (h) mid.push(h.p); }
-      if (withCorner && mid.length > 1) grp.add(tube(mid, 0.0042, redLed, false, mid.length * 3));
-      // the lid section: a dim red strip with a row of LED dots in front of it
-      if (!withCorner) grp.add(new THREE.Mesh(gridGeo(bandRows(T, -depth + 0.006, a0, a1, 1, 24, 0.2, 0.8).rows), redDim));
-      // LED dots (instanced)
-      const dots = [];
-      for (let a = a0 + 0.6; a < a1; a += withCorner ? 1.15 : 1.25) {
-        for (const t of withCorner ? (a > 24 ? [0.2, 0.8] : [0.5]) : [0.5]) {
-          const y = T.ylo(a) + (T.yhi(a) - T.ylo(a)) * t;
-          const h = tailP(a, y, -0.01);
-          if (h) dots.push(h.p);
+    let split = 35;
+    for (let a = 25; a < 50; a += 0.1) { const h = tailP(a, (T.ylo(a) + T.yhi(a)) / 2, 0); if (h && Math.abs(h.p.z) >= 0.6) { split = a; break; } }
+    const GAP = 0.25; // each part stops ~3 mm short of the cut, so nothing crosses it
+    const lerp = (a, b, t) => a + (b - a) * THREE.MathUtils.clamp(t, 0, 1);
+    const span = (a, a0, a1) => THREE.MathUtils.clamp((a - a0) / (a1 - a0), 0, 1);
+    // strip between two height curves y0(a) .. y1(a); the middle row bulges forward by `bulge`
+    // (a rounded light guide), `off` is the distance from the paint (negative = inside the lamp)
+    const strip = (a0, a1, y0, y1, off, mat, bulge = 0, cols) => {
+      const n = cols || Math.max(8, Math.round((a1 - a0) * 2.5));
+      const rows = [];
+      for (const [t, o] of [[0, off], [0.5, off + bulge], [1, off]]) {
+        const row = [];
+        for (let j = 0; j <= n; j++) {
+          const a = a0 + ((a1 - a0) * j) / n;
+          const lo = y0(a), hi = Math.max(lo + 0.0004, y1(a));
+          const h = tailP(a, lo + (hi - lo) * t, o);
+          row.push(h ? h.p : (row[j - 1] || V(0, lo, 0)).clone());
         }
+        rows.push(row);
       }
-      if (dots.length) {
-        const im = new THREE.InstancedMesh(new THREE.SphereGeometry(0.0034, 8, 6), redLed, dots.length);
-        const mm = new THREE.Matrix4();
-        dots.forEach((p, i) => im.setMatrixAt(i, mm.makeTranslation(p.x, p.y, p.z)));
-        grp.add(im);
+      return new THREE.Mesh(gridGeo(rows), mat);
+    };
+    const tailBand = new THREE.MeshStandardMaterial({ color: 0x8a0610, emissive: 0xff0010, emissiveIntensity: 0.72, roughness: 0.5, envMapIntensity: 0.3 });
+    const tailBand2 = new THREE.MeshStandardMaterial({ color: 0x600409, emissive: 0xd0000c, emissiveIntensity: 0.6, roughness: 0.5, envMapIntensity: 0.3 });
+    const smoke = new THREE.MeshStandardMaterial({ color: 0x050102, metalness: 0, roughness: 0.7, side: THREE.DoubleSide });
+    const reflector = new THREE.MeshStandardMaterial({ color: 0x3c0509, emissive: 0x3a0008, emissiveIntensity: 0.5, metalness: 0.5, roughness: 0.25 });
+    const clearLens = new THREE.MeshPhysicalMaterial({
+      color: 0xffffff, metalness: 0, roughness: 0.03, clearcoat: 1, transparent: true, opacity: 0.1, depthWrite: false,
+    });
+    const reverseLamp = new THREE.MeshStandardMaterial({ color: 0xdfe3ea, emissive: 0x5a5e66, emissiveIntensity: 0.2, metalness: 0.9, roughness: 0.1 });
+    const turnClear = new THREE.MeshStandardMaterial({ color: 0xd8d6d2, emissive: 0x3a3632, emissiveIntensity: 0.3, metalness: 0.8, roughness: 0.16 });
+    const turnAmber = new THREE.MeshStandardMaterial({ color: 0xffa040, emissive: 0xff7000, emissiveIntensity: 0.55, roughness: 0.25, metalness: 0.35 });
+
+    // band layout (heights in metres measured from the unit's top / bottom edge)
+    const upperTop = (a) => T.yhi(a) - 0.004 - turnH(a);
+    const upperW = (a) => lerp(0.009, 0.025, span(a, A_TIP, split)); // thick, thinning towards the tip
+    const upperBot = (a) => Math.max(T.ylo(a) + 0.004, upperTop(a) - upperW(a));
+    const lowA0 = (a) => T.ylo(a) + 0.004;
+    const lowA1 = (a) => Math.min(upperBot(a) - 0.002, lowA0(a) + lerp(0.006, 0.017, span(a, A_TIP, split)));
+    const lowB0 = (a) => lowA1(a) + 0.0035;
+    const lowB1 = (a) => Math.min(upperBot(a) - 0.004, lowB0(a) + 0.008);
+    // turn signal: a wedge above the upper band, growing towards the outer end of the corner part
+    const turnH = (a) => (a <= split ? 0 : 0.034 * span(a, split + 0.5, 50) ** 0.8);
+
+    const unit = (a0, a1, lid) => {
+      const grp = new THREE.Group();
+      // smoked back of the housing and the side walls (closed all round, also at the trunk cut)
+      grp.add(strip(a0, a1, T.ylo, T.yhi, -depth, smoke));
+      grp.add(walls(T, depth, smoke, 80, [a0, a1, true]));
+      // clear outer lens
+      const lens = strip(a0, a1, T.ylo, T.yhi, 0.003, clearLens);
+      lens.renderOrder = 3;
+      lens.userData.keep = true;
+      grp.add(lens);
+      const front = -depth + 0.008;
+      if (lid) {
+        // upper band right into the tip; the double lower band stops a little short of it
+        grp.add(strip(a0, a1, upperBot, upperTop, front, tailBand, 0.005));
+        grp.add(strip(a0 + 0.6, a1, lowA0, lowA1, front, tailBand, 0.004));
+        grp.add(strip(a0 + 3.5, a1, lowB0, lowB1, front - 0.002, tailBand2, 0.003));
+        // clear reverse lamp in the middle, pointed at its inner end
+        const r0 = lerp(A_TIP, split, 0.42), r1 = a1 - 0.8;
+        const rc = (a) => (lowB1(a) + upperBot(a)) / 2;
+        const rh = (a) => Math.max(0, (upperBot(a) - lowB1(a)) / 2 - 0.004) * span(a, r0, r0 + 4) ** 0.7;
+        grp.add(strip(r0, r1, (a) => rc(a) - rh(a), (a) => rc(a) + rh(a), front - 0.004, reverseLamp, 0.002));
+        // dark red ground between the bands, outside the reverse lamp
+        grp.add(strip(a0 + 0.3, a1, lowB1, upperBot, -depth + 0.003, reflector));
+      } else {
+        // C: upper and lower bands joined by a vertical band at the outer end
+        const aC = a1 - 1.6;
+        grp.add(strip(a0, aC + 0.4, upperBot, upperTop, front, tailBand, 0.005));
+        grp.add(strip(a0, aC + 0.4, lowA0, lowA1, front, tailBand, 0.004));
+        grp.add(strip(a0, aC - 0.8, lowB0, lowB1, front - 0.002, tailBand2, 0.003));
+        grp.add(strip(aC, a1 - 0.25, lowA0, upperTop, front, tailBand, 0.004, 4));
+        // faceted red reflector inside the C
+        grp.add(strip(a0, aC, (a) => lowB1(a) - 0.001, (a) => upperBot(a) + 0.001, -depth + 0.011, reflector, 0, Math.round((aC - a0) * 5)));
+        // turn signal above the upper band: clear, with the amber bulb area in its outer half
+        const tLo = (a) => upperTop(a) + 0.002, tHi = (a) => T.yhi(a) - 0.003;
+        const t0 = split + 1.2;
+        grp.add(strip(t0, a1 - 0.3, tLo, tHi, front - 0.006, turnClear, 0.002));
+        const am0 = lerp(t0, a1, 0.45), am1 = a1 - 2.5;
+        const amc = (a) => (tLo(a) + tHi(a)) / 2, amh = (a) => Math.max(0, (tHi(a) - tLo(a)) / 2 - 0.006);
+        grp.add(strip(am0, am1, (a) => amc(a) - amh(a), (a) => amc(a) + amh(a), front - 0.005, turnAmber, 0.002));
       }
-      if (withCorner) {
-        // C-shaped outline guide (upper and lower arms joined at the outer end)
-        const c = [];
-        for (let a = 26; a <= 56; a += 1.5) { const h = tailP(a, T.yhi(a) - 0.007, -0.009); if (h) c.push(h.p); }
-        for (let a = 56; a >= 26; a -= 1.5) { const h = tailP(a, T.ylo(a) + 0.007, -0.009); if (h) c.push(h.p); }
-        grp.add(tube(c, 0.0032, redLed, false, 160));
-        // reverse lamp (inner) and amber turn signal (outer) segments, lower half
-        const { rows: rv } = bandRows(T, -depth + 0.008, Math.max(a0, split + 1), Math.max(a0, split + 1) + 6, 1, 6, 0.28, 0.72);
-        grp.add(new THREE.Mesh(gridGeo(rv), reverseMat));
-        const { rows: am } = bandRows(T, -depth + 0.008, 44, 51, 1, 6, 0.3, 0.7);
-        grp.add(new THREE.Mesh(gridGeo(am), amber));
-        grp.add(new THREE.Mesh(gridGeo(bandRows(T, -depth + 0.004, a0, a1, 2, 20, 0.05, 0.95).rows), redDim));
-      }
-      grp.add(walls(T, depth, tailHousing, 60, [a0, a1, false, withCorner]));
       return grp;
     };
-    // centre (on the lid): angles 0..split, mirrored
-    const lidR = build(0, split, false);
-    const lidBaked = bake(lidR);
+    // lid part: swings up with the trunk lid
+    const lidBaked = bake(unit(A_TIP, split - GAP, true));
     const lidLamps = new THREE.Group();
     lidLamps.add(lidBaked, mirrored(lidBaked));
     part('taillight', lidLamps, null, trunk.inner);
-    const cornerR = build(split, 59, true);
-    const cornerBaked = bake(cornerR);
+    // body part: stays on the car
+    const cornerBaked = bake(unit(split + GAP, A_END, false));
     const tails = new THREE.Group();
     tails.add(cornerBaked, mirrored(cornerBaked));
     // reflectors low on the bumper corners
