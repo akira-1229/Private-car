@@ -248,6 +248,7 @@ dialog form { max-height: calc(100dvh - 40px); overflow-y: auto; }
   transition: opacity 0.25s, transform 0.25s;
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
+.toast { max-width: min(88vw, 420px); width: max-content; text-align: center; line-height: 1.45; }
 
 .update-banner {
   position: absolute; z-index: 7; left: 16px; right: 16px; top: calc(var(--safe-t) + 66px);
@@ -382,3 +383,7 @@ input.switch:checked::after { transform: translateX(20px); }
 .chip-s { border: 1px solid var(--line); background: var(--card-2); border-radius: 999px; padding: 5px 10px; font-size: 12px; cursor: pointer; }
 .pend { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px; font-size: 11px; background: rgba(245, 184, 61, 0.2); color: #ffd27a; }
 .icon-btn[hidden] { display: none; }
+.sync-btn { color: var(--fg); }
+.sync-btn .sync-ico { display: block; font-size: 22px; line-height: 1; font-weight: 600; }
+.sync-btn.spinning .sync-ico { animation: spin 0.9s linear infinite; }
+.sync-btn:disabled { opacity: 0.7; cursor: progress; }

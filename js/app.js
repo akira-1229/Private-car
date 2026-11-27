@@ -67,12 +67,12 @@ viewer.onPanel = (id, open, label) => {
   else if (id === 'hood' && currentView?.id === 'engine') closePanel();
 };
 let toastTimer = 0;
-function toast(msg) {
+function toast(msg, ms = 1400) {
   const el = $('#toast');
   el.textContent = msg;
   el.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove('show'), 1400);
+  toastTimer = setTimeout(() => el.classList.remove('show'), ms);
 }
 
 $('#carName').textContent = settings.carName || DEFAULTS.carName;
@@ -134,9 +134,10 @@ async function refresh({ manual = false } = {}) {
     apply(parseCSV(DEMO_CSV), 'demo');
     lastSync = new Date();
     setStatus();
-    return;
+    return { ok: true, demo: true };
   }
   loading = true;
+  let result;
   $('#titleCard').classList.add('loading');
   try {
     const table = await fetchBook(url, { full: manual });
@@ -145,7 +146,9 @@ async function refresh({ manual = false } = {}) {
     store.set(CACHE_KEY, { url, table, at: lastSync.toISOString() });
     setTimeout(sendPending, 500);
     $('#errorBanner').hidden = true;
+    result = { ok: true };
   } catch (e) {
+    result = { ok: false, error: e.message || String(e) };
     const cache = store.get(CACHE_KEY, null);
     if (!data && cache && cache.url === url) {
       apply(cache.table, 'cache');
@@ -158,6 +161,7 @@ async function refresh({ manual = false } = {}) {
     $('#titleCard').classList.remove('loading');
     setStatus();
   }
+  return result;
 }
 
 function showError(msg) {
@@ -325,6 +329,7 @@ $('#panelBody').addEventListener('click', (e) => {
 
 function showPanel({ keepScroll = false } = {}) {
   $('#btnAdd').hidden = !(currentView && (currentView.type === 'part' || ['all', 'general', 'attention'].includes(currentView.type)));
+  $('#btnSync').hidden = $('#btnAdd').hidden;
   $('#panel').classList.add('open');
   $('#panel').setAttribute('aria-hidden', 'false');
   if (!keepScroll) $('#panelBody').scrollTop = 0;
@@ -654,6 +659,7 @@ function openAddForm() {
   $('#panelTitle').textContent = '記録を追加';
   $('#panelSub').textContent = 'アプリとスプレッドシートに追加します';
   $('#btnAdd').hidden = true;
+  $('#btnSync').hidden = true;
   $('#panelBody').innerHTML = `
     <form id="addForm" class="card add-form" autocomplete="off">
       <div class="row2">
@@ -757,12 +763,13 @@ async function submitRecord(f) {
 }
 
 let sending = false;
-async function sendPending() {
-  if (sending || !settings.gasUrl) return;
+// fromSync: called by the ↻ button, which does its own re-read and reporting
+async function sendPending({ fromSync = false } = {}) {
+  if (sending || !settings.gasUrl) return { ok: 0 };
   const list = pending().filter((p) => !p.sent);
-  if (!list.length) return;
+  if (!list.length) return { ok: 0 };
   sending = true;
-  let ok = 0;
+  let ok = 0, error = '';
   try {
     for (const p of list) {
       const res = await fetch(settings.gasUrl, { method: 'POST', body: JSON.stringify({ token: settings.gasToken, ...p.payload }) });
@@ -772,13 +779,57 @@ async function sendPending() {
       ok++;
     }
   } catch (e) {
+    error = e.message || String(e);
     showError(`スプレッドシートに書き込めませんでした（${e.message || e}）。アプリには残してあり、あとで自動で再送します。`);
   } finally {
     sending = false;
   }
+  if (fromSync) return { ok, error };
   if (ok) { toast(`スプレッドシートに ${ok}件 追加しました`); refresh({ manual: true }); }
+  return { ok, error };
 }
 $('#btnAdd').addEventListener('click', openAddForm);
+
+// ---------- ↻ sync: send pending → re-read the sheet → report whether both sides match ----------
+const until = async (cond, ms = 30000) => { for (const t = Date.now(); cond() && Date.now() - t < ms;) await new Promise((r) => setTimeout(r, 100)); };
+async function syncNow() {
+  const btn = $('#btnSync');
+  if (btn.disabled) return;
+  btn.disabled = true;
+  btn.classList.add('spinning');
+  btn.setAttribute('aria-busy', 'true');
+  let msg;
+  try {
+    await until(() => sending); // an automatic send may already be running
+    const sent = await sendPending({ fromSync: true });
+    await until(() => loading); // let a running refresh finish, then read again ourselves
+    const r = (await refresh({ manual: true })) || { ok: false, error: '読み込み中のため確認できませんでした' };
+    const left = pending();
+    const unsent = left.filter((p) => !p.sent).length;
+    const waiting = left.length - unsent; // sent, but not in the sheet yet
+    const sentMsg = sent.ok ? `${sent.ok}件送信、` : '';
+    if (!r.ok) {
+      msg = `⚠ シートを読み直せませんでした（${r.error}）${left.length ? `。送信待ち ${left.length}件` : ''}`;
+    } else if (r.demo) {
+      msg = '⚠ スプレッドシートが未設定です（デモ表示中）。設定 → スプレッドシートを入力してください';
+    } else if (!left.length) {
+      msg = `✓ ${sentMsg}同期しました（シートと一致）・記録 ${data?.rows?.length ?? 0}件`;
+    } else {
+      const why = !settings.gasUrl ? '設定 → スプレッドシートへの書き込みが未入力です'
+        : unsent ? `送信に失敗しました${sent.error ? `（${sent.error}）` : ''}。通信状態を確認してもう一度お試しください`
+        : 'シートへの反映待ちです。少し待ってからもう一度お試しください';
+      msg = `⚠ ${sentMsg}送信待ちが${left.length}件残っています${waiting && unsent ? `（未送信${unsent}・反映待ち${waiting}）` : ''}。${why}`;
+    }
+  } catch (e) {
+    msg = `⚠ 同期できませんでした（${e.message || e}）`;
+  } finally {
+    btn.disabled = false;
+    btn.classList.remove('spinning');
+    btn.removeAttribute('aria-busy');
+  }
+  toast(msg, msg.startsWith('✓') ? 4500 : 8000);
+}
+$('#btnSync').addEventListener('click', syncNow);
 
 // ---------- update notice ----------
 // index.html carries the build number stamped at deploy time; version.json always has the latest one.
